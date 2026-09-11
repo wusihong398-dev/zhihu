@@ -38,6 +38,7 @@ jobs:
         working-directory: backend
 
     env:
+      PYTHONPATH: .
       APP_SECRET_KEY: 0123456789abcdef0123456789abcdef
       DATABASE_URL: postgresql+asyncpg://totod:test-password@127.0.0.1:5432/totod
       REDIS_URL: redis://127.0.0.1:6379/0
@@ -56,4 +57,3 @@ jobs:
         run: python -m compileall -q app tests
       - name: Run tests
         run: pytest -q
-
