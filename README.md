@@ -13,7 +13,7 @@
 
 ## 当前版本
 
-`v0.2.0`：上线管理后台，支持管理员登录、运行概览、账号新增，以及各账号每日文章/回答配额与启停状态管理。
+`v0.3.0`：增加 AI 平台加密配置与连接测试；增加按账号隔离的百度/谷歌真实网页关键词采集、进度和关键词库。
 
 ## 快速启动
 
@@ -35,6 +35,12 @@ bash scripts/bootstrap_server.sh
 - `GET /api/accounts`：账号列表。
 - `GET /api/accounts/{account_id}`：账号详情。
 - `PATCH /api/accounts/{account_id}`：修改备注、配额、时区和启用状态。
+- `GET /api/ai/providers`：获取预置 AI 平台与已保存配置（不返回 API Key 明文）。
+- `PUT /api/ai/providers/{provider}`：加密保存 API Key 和模型。
+- `POST /api/ai/providers/{provider}/test`：实际请求平台测试配置。
+- `POST /api/accounts/{account_id}/keyword-jobs`：启动关键词采集任务。
+- `GET /api/accounts/{account_id}/keyword-jobs/latest`：查询采集进度。
+- `GET /api/accounts/{account_id}/keywords`：读取该账号独立关键词库。
 
 除健康检查、版本和登录外，业务接口均要求管理员 Bearer Token。
 

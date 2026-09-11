@@ -7,7 +7,7 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/app.css?v=0.3.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -53,6 +53,8 @@
       <nav class="nav" aria-label="主导航">
         <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span>运行概览</button>
         <button class="nav-item" data-page="accounts"><span class="nav-icon">◎</span>知乎账号</button>
+        <button class="nav-item" data-page="keywords"><span class="nav-icon">⌕</span>关键词采集</button>
+        <button class="nav-item" data-page="ai"><span class="nav-icon">◇</span>AI 配置</button>
       </nav>
       <div class="sidebar-status">
         <span class="status-dot"></span>
@@ -73,7 +75,7 @@
 
       <div id="overview-page" class="page active-page">
         <section class="welcome-row">
-          <div><span class="eyebrow">今日运营控制台</span><h1>把每个账号的发布节奏安排清楚</h1><p>每日配额按账号独立执行。当前阶段可管理账号、启停状态和发文/回答上限。</p></div>
+          <div><span class="eyebrow">今日运营控制台</span><h1>把每个账号的发布节奏安排清楚</h1><p>每日配额按账号独立执行，关键词、内容与任务数据分别保存。</p></div>
           <button class="button button-primary" data-open-account>＋ 添加知乎账号</button>
         </section>
         <section class="metrics" aria-label="运行指标">
@@ -97,6 +99,49 @@
           <div id="accounts-empty" class="empty-state" hidden><span>◎</span><h3>账号列表为空</h3><p>添加知乎账号并为它设置每日运营上限。</p><button class="button button-primary" data-open-account>添加账号</button></div>
         </section>
       </div>
+
+      <div id="keywords-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">真实网页相关搜索</span><h1>关键词采集</h1><p>从百度“相关搜索”和谷歌“用户还搜索了”提取关联词，数量不足时按词长从短到长逐层扩展。</p></div></section>
+        <section class="collector-layout">
+          <form id="keyword-form" class="panel collector-form">
+            <div class="panel-head"><div><span class="eyebrow">新建任务</span><h3>设置采集规则</h3></div></div>
+            <div class="form-body">
+              <label for="keyword-account">保存到知乎账号</label>
+              <select id="keyword-account" required><option value="">请先选择账号</option></select>
+              <label for="seed-keyword">主关键词</label>
+              <input id="seed-keyword" maxlength="255" placeholder="例如：智能家居" required>
+              <div class="field-grid">
+                <div><label for="keyword-source">搜索引擎</label><select id="keyword-source"><option value="both">百度 + 谷歌</option><option value="baidu">仅百度</option><option value="google">仅谷歌</option></select></div>
+                <div><label for="keyword-target">采集数量</label><input id="keyword-target" type="number" min="1" max="500" value="50" required></div>
+              </div>
+              <p class="field-help">搜索引擎可能要求验证；任务会记录已完成数量和具体原因。</p>
+              <p id="keyword-error" class="form-error" role="alert"></p>
+              <button id="keyword-start" class="button button-primary button-block" type="submit">开始采集</button>
+            </div>
+          </form>
+          <section class="panel progress-panel">
+            <div class="panel-head"><div><span class="eyebrow">任务进度</span><h3>当前采集状态</h3></div><button id="keyword-refresh" class="text-button">刷新</button></div>
+            <div id="job-empty" class="mini-empty"><span>⌕</span><p>选择账号后显示最近一次采集任务。</p></div>
+            <div id="job-progress" class="job-progress" hidden>
+              <div class="job-status-row"><span id="job-status" class="badge">等待中</span><strong id="job-count">0 / 0</strong></div>
+              <div class="progress-track"><i id="job-progress-bar"></i></div>
+              <dl><div><dt>正在搜索</dt><dd id="job-current">—</dd></div><div><dt>已搜索页面</dt><dd id="job-searched">0</dd></div><div><dt>主关键词</dt><dd id="job-seed">—</dd></div></dl>
+              <p id="job-message" class="job-message"></p>
+            </div>
+          </section>
+        </section>
+        <section class="panel keyword-list-panel">
+          <div class="panel-head"><div><span class="eyebrow">账号关键词库</span><h3>已采集关键词</h3></div><strong id="keyword-total" class="panel-count">0 个</strong></div>
+          <div id="keyword-list" class="keyword-list"></div>
+          <div id="keyword-empty" class="empty-state"><span>⌕</span><h3>还没有关键词</h3><p>选择账号并执行一次关键词采集任务。</p></div>
+        </section>
+      </div>
+
+      <div id="ai-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">统一模型接口</span><h1>AI 平台配置</h1><p>平台地址和常用文字模型已经预置。填写 API Key、选择模型后即可保存和测试。</p></div></section>
+        <div id="provider-grid" class="provider-grid"></div>
+        <section class="security-note"><span>◇</span><div><strong>API Key 加密保存</strong><p>密钥使用服务器应用密钥加密，网页和查询接口只显示掩码，不会返回完整内容。</p></div></section>
+      </div>
     </section>
   </div>
 
@@ -119,6 +164,6 @@
     </section>
   </div>
 
-  <script src="/assets/app.js" defer></script>
+  <script src="/assets/app.js?v=0.3.0" defer></script>
 </body>
 </html>
