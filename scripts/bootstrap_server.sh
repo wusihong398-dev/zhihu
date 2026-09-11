@@ -10,6 +10,11 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 
 install -d -m 700 /var/lib/totod/accounts /var/lib/totod/uploads /var/lib/totod/postgres /var/lib/totod/redis /var/log/totod /var/backups/totod
+install -d -m 755 /var/www/totod /var/www/totod/assets
+install -m 644 "${PROJECT_DIR}/frontend/dist/index.html" /var/www/totod/index.html
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/app.css" /var/www/totod/assets/app.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/app.js" /var/www/totod/assets/app.js
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/favicon.svg" /var/www/totod/assets/favicon.svg
 
 echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-totod.conf
 sysctl -w vm.overcommit_memory=1 >/dev/null
@@ -45,8 +50,9 @@ install -d -m 755 /etc/nginx/sites-available /etc/nginx/sites-enabled
 nginx_site="/etc/nginx/sites-available/totod.cn"
 certificate_file="/etc/letsencrypt/live/totod.cn/fullchain.pem"
 
-if [[ -f "${certificate_file}" && -f "${nginx_site}" ]]; then
-  echo "检测到现有 HTTPS 证书，保留 Certbot 管理的 Nginx 配置"
+if [[ -f "${certificate_file}" ]]; then
+  echo "检测到现有 HTTPS 证书，安装 HTTPS 站点配置"
+  install -m 644 "${PROJECT_DIR}/nginx/totod.cn.https.conf" "${nginx_site}"
 else
   install -m 644 "${PROJECT_DIR}/nginx/totod.cn.conf" "${nginx_site}"
 fi

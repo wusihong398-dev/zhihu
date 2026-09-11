@@ -55,5 +55,7 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Compile source
         run: python -m compileall -q app tests
+      - name: Check admin frontend
+        run: node --check ../frontend/dist/assets/app.js
       - name: Run tests
         run: pytest -q

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07101f">
+  <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
+  <title>TOTOD 知乎运营助手</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+  <main id="login-view" class="login-view">
+    <section class="login-panel" aria-labelledby="login-title">
+      <div class="brand brand-login">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span><strong>TOTOD</strong><small>知乎运营助手</small></span>
+      </div>
+      <div class="login-copy">
+        <span class="eyebrow">服务器管理后台</span>
+        <h1 id="login-title">管理内容，也管理节奏</h1>
+        <p>集中管理知乎账号与每日发布配额，各账号数据独立保存、互不干扰。</p>
+      </div>
+      <form id="login-form" class="login-form">
+        <label for="username">管理员账号</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">管理员密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" class="form-error" role="alert"></p>
+        <button id="login-button" class="button button-primary button-block" type="submit">登录管理后台</button>
+      </form>
+      <p class="login-foot">安全连接 · 管理操作需要身份验证</p>
+    </section>
+    <aside class="login-aside" aria-hidden="true">
+      <div class="orb orb-one"></div><div class="orb orb-two"></div>
+      <div class="signal-card">
+        <span class="signal-label">运行状态</span>
+        <strong>账号独立运营</strong>
+        <div class="signal-lines"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="signal-meta"><span>任务节奏</span><b>可控</b></div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="app-view" class="app-view" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span><strong>TOTOD</strong><small>知乎运营助手</small></span>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span>运行概览</button>
+        <button class="nav-item" data-page="accounts"><span class="nav-icon">◎</span>知乎账号</button>
+      </nav>
+      <div class="sidebar-status">
+        <span class="status-dot"></span>
+        <span><strong>服务运行正常</strong><small id="sidebar-version">正在检测版本</small></span>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button id="menu-button" class="icon-button menu-button" aria-label="打开菜单">☰</button>
+        <div><p id="page-kicker">工作台</p><h2 id="page-title">运行概览</h2></div>
+        <div class="topbar-actions">
+          <button id="refresh-button" class="icon-button" aria-label="刷新数据">↻</button>
+          <div class="user-menu"><span id="user-avatar">A</span><div><strong id="user-name">管理员</strong><small>系统管理员</small></div></div>
+          <button id="logout-button" class="button button-ghost">退出</button>
+        </div>
+      </header>
+
+      <div id="overview-page" class="page active-page">
+        <section class="welcome-row">
+          <div><span class="eyebrow">今日运营控制台</span><h1>把每个账号的发布节奏安排清楚</h1><p>每日配额按账号独立执行。当前阶段可管理账号、启停状态和发文/回答上限。</p></div>
+          <button class="button button-primary" data-open-account>＋ 添加知乎账号</button>
+        </section>
+        <section class="metrics" aria-label="运行指标">
+          <article class="metric-card accent-blue"><span>知乎账号</span><strong id="metric-accounts">0</strong><small id="metric-enabled">0 个已启用</small></article>
+          <article class="metric-card accent-cyan"><span>每日发文额度</span><strong id="metric-articles">0</strong><small>所有启用账号合计</small></article>
+          <article class="metric-card accent-violet"><span>每日回答额度</span><strong id="metric-answers">0</strong><small>所有启用账号合计</small></article>
+          <article class="metric-card accent-green"><span>系统状态</span><strong class="metric-status"><i></i>正常</strong><small>数据库与任务缓存在线</small></article>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><span class="eyebrow">账号配额</span><h3>今日计划</h3></div><button class="text-button" data-page-link="accounts">管理全部账号 →</button></div>
+          <div id="overview-accounts" class="account-grid"></div>
+          <div id="overview-empty" class="empty-state" hidden><span>◎</span><h3>还没有知乎账号</h3><p>添加第一个账号后，即可设置每天的文章和回答数量。</p><button class="button button-primary" data-open-account>添加账号</button></div>
+        </section>
+      </div>
+
+      <div id="accounts-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">独立数据空间</span><h1>知乎账号管理</h1><p>每个账号分别保存资料与配额，修改一个账号不会影响其他账号。</p></div><button class="button button-primary" data-open-account>＋ 添加账号</button></section>
+        <section class="panel account-panel">
+          <div class="table-toolbar"><label class="search-box">⌕<input id="account-search" placeholder="搜索账号或备注"></label><span id="account-count">共 0 个账号</span></div>
+          <div id="accounts-table" class="accounts-table"></div>
+          <div id="accounts-empty" class="empty-state" hidden><span>◎</span><h3>账号列表为空</h3><p>添加知乎账号并为它设置每日运营上限。</p><button class="button button-primary" data-open-account>添加账号</button></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div id="account-dialog" class="dialog-backdrop" hidden>
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div class="dialog-head"><div><span class="eyebrow">独立账号空间</span><h2 id="dialog-title">添加知乎账号</h2></div><button id="dialog-close" class="icon-button" aria-label="关闭">×</button></div>
+      <form id="account-form">
+        <label for="display-name">账号名称</label>
+        <input id="display-name" name="display_name" maxlength="100" placeholder="例如：家居好物号" required>
+        <label for="remark">账号备注</label>
+        <input id="remark" name="remark" maxlength="255" placeholder="例如：主推智能家居产品">
+        <div class="field-grid">
+          <div><label for="article-limit">每天发布文章</label><input id="article-limit" name="daily_article_limit" type="number" min="0" max="100" value="3" required></div>
+          <div><label for="answer-limit">每天回答问题</label><input id="answer-limit" name="daily_answer_limit" type="number" min="0" max="200" value="5" required></div>
+        </div>
+        <p class="field-help">设置为 0 表示该账号暂不执行对应任务。</p>
+        <p id="account-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="dialog-cancel" class="button button-ghost" type="button">取消</button><button id="account-submit" class="button button-primary" type="submit">保存账号</button></div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

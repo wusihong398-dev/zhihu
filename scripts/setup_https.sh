@@ -6,6 +6,8 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx
 
@@ -25,6 +27,7 @@ else
 fi
 
 certbot "${certbot_args[@]}"
+install -m 644 "${PROJECT_DIR}/nginx/totod.cn.https.conf" /etc/nginx/sites-available/totod.cn
 nginx -t
 systemctl reload nginx
 
