@@ -13,16 +13,15 @@
 
 ## 当前版本
 
-`v0.1.1`：服务器基础、管理员鉴权、健康检查、账号模型、账号 CRUD、账号级存储隔离。
+`v0.1.2`：服务器基础、管理员鉴权、账号级存储隔离，以及安全的一键服务器初始化脚本。
 
 ## 快速启动
 
 ```bash
-cp .env.example .env
-# 修改 .env 中的密码和 APP_SECRET_KEY
-docker compose up -d --build
-curl http://127.0.0.1:18080/api/health
+bash scripts/bootstrap_server.sh
 ```
+
+脚本会在服务器本地创建权限为 `600` 的 `.env`，并生成随机数据库密码和应用密钥；不会覆盖已经存在的 `.env`。
 
 后端只监听服务器回环地址 `127.0.0.1:18080`，公网必须通过 Nginx 访问。
 

@@ -33,4 +33,4 @@ async def health() -> dict[str, str]:
 
 @router.get("/version")
 async def version() -> dict[str, str]:
-    return {"name": settings.app_name, "version": "0.1.1"}
+    return {"name": settings.app_name, "version": "0.1.2"}
