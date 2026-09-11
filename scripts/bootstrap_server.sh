@@ -11,6 +11,9 @@ ENV_FILE="${PROJECT_DIR}/.env"
 
 install -d -m 700 /var/lib/totod/accounts /var/lib/totod/uploads /var/lib/totod/postgres /var/lib/totod/redis /var/log/totod /var/backups/totod
 
+echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-totod.conf
+sysctl -w vm.overcommit_memory=1 >/dev/null
+
 if [[ ! -f "${ENV_FILE}" ]]; then
   umask 077
   database_password="$(openssl rand -hex 24)"
