@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import accounts_router, health_router
+from app.api import accounts_router, auth_router, health_router
 from app.core.config import settings
 from app.db.session import create_schema
 import app.models  # noqa: F401 - registers database models
@@ -17,11 +17,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version="0.1.1",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
 app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 app.include_router(accounts_router, prefix="/api")
-

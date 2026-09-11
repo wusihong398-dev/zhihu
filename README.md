@@ -13,7 +13,7 @@
 
 ## 当前版本
 
-`v0.1.0`：服务器基础、健康检查、账号模型、账号 CRUD、账号级存储隔离。
+`v0.1.1`：服务器基础、管理员鉴权、健康检查、账号模型、账号 CRUD、账号级存储隔离。
 
 ## 快速启动
 
@@ -30,10 +30,20 @@ curl http://127.0.0.1:18080/api/health
 
 - `GET /api/health`：数据库、Redis和账号存储检查。
 - `GET /api/version`：当前版本。
+- `POST /api/auth/login`：管理员登录。
+- `GET /api/auth/me`：验证当前管理员身份。
 - `POST /api/accounts`：创建知乎账号记录并初始化独立目录。
 - `GET /api/accounts`：账号列表。
 - `GET /api/accounts/{account_id}`：账号详情。
 - `PATCH /api/accounts/{account_id}`：修改备注、配额、时区和启用状态。
+
+除健康检查、版本和登录外，业务接口均要求管理员 Bearer Token。
+
+首次启动后，在服务器交互式创建管理员：
+
+```bash
+docker compose exec backend python -m app.create_admin
+```
 
 ## 数据隔离
 
@@ -47,4 +57,3 @@ curl http://127.0.0.1:18080/api/health
 ```
 
 数据库中的账号关联数据必须包含 `account_id`。任何跨账号复制必须由用户显式触发，禁止隐式共享。
-

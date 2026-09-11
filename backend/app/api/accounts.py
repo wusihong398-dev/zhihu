@@ -4,12 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_admin
 from app.db.session import get_db
 from app.models.account import ZhihuAccount
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 from app.services.account_storage import initialize_account_storage
 
-router = APIRouter(prefix="/accounts", tags=["accounts"])
+router = APIRouter(
+    prefix="/accounts",
+    tags=["accounts"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -59,4 +64,3 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
     return account
-
