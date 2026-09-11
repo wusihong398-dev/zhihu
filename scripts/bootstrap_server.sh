@@ -9,7 +9,7 @@ fi
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 
-install -d -m 700 +  /var/lib/totod/accounts +  /var/lib/totod/uploads +  /var/lib/totod/postgres +  /var/lib/totod/redis +  /var/log/totod +  /var/backups/totod
+install -d -m 700 /var/lib/totod/accounts /var/lib/totod/uploads /var/lib/totod/postgres /var/lib/totod/redis /var/log/totod /var/backups/totod
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   umask 077
@@ -38,7 +38,8 @@ fi
 cd "${PROJECT_DIR}"
 docker compose up -d --build
 
-install -m 644 +  "${PROJECT_DIR}/nginx/totod.cn.conf" +  /etc/nginx/sites-available/totod.cn
+install -d -m 755 /etc/nginx/sites-available /etc/nginx/sites-enabled
+install -m 644 "${PROJECT_DIR}/nginx/totod.cn.conf" /etc/nginx/sites-available/totod.cn
 ln -sfn /etc/nginx/sites-available/totod.cn /etc/nginx/sites-enabled/totod.cn
 if [[ -L /etc/nginx/sites-enabled/default ]]; then
   unlink /etc/nginx/sites-enabled/default
@@ -46,6 +47,7 @@ fi
 
 nginx -t
 systemctl reload nginx
+rmdir "${PROJECT_DIR}/+" 2>/dev/null || true
 
 echo "等待后端健康检查"
 for attempt in {1..30}; do
@@ -62,4 +64,3 @@ echo "后端未在60秒内通过健康检查"
 docker compose ps
 docker compose logs --tail=120 backend
 exit 1
-
