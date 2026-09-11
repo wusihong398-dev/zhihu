@@ -9,8 +9,8 @@ from app.db.session import SessionLocal
 router = APIRouter(tags=["system"])
 
 
-@router.get("/health")
-async def health() -> dict[str, str] | JSONResponse:
+@router.get("/health", response_model=None)
+async def health():
     database = "ok"
     redis_status = "ok"
 
@@ -30,11 +30,10 @@ async def health() -> dict[str, str] | JSONResponse:
 
     overall = "ok" if database == redis_status == "ok" else "degraded"
     payload = {"status": overall, "database": database, "redis": redis_status}
-    if overall != "ok":
-        return JSONResponse(status_code=503, content=payload)
-    return payload
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @router.get("/version")
 async def version() -> dict[str, str]:
-    return {"name": settings.app_name, "version": "0.1.4"}
+    return {"name": settings.app_name, "version": "0.1.5"}
