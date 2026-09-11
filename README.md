@@ -13,7 +13,7 @@
 
 ## 当前版本
 
-`v0.1.5`：服务器基础、管理员鉴权、账号隔离，并修复健康接口启动兼容性。
+`v0.1.6`：服务器基础、管理员鉴权、账号隔离、健康检查与可持续保留的 HTTPS 部署。
 
 ## 快速启动
 
@@ -43,6 +43,20 @@ bash scripts/bootstrap_server.sh
 ```bash
 docker compose exec backend python -m app.create_admin
 ```
+
+为 `totod.cn` 和 `www.totod.cn` 配置 Let's Encrypt HTTPS：
+
+```bash
+bash scripts/setup_https.sh
+```
+
+如需接收证书到期通知，可在执行时提供邮箱：
+
+```bash
+CERTBOT_EMAIL=your-email@example.com bash scripts/setup_https.sh
+```
+
+后续再次运行部署脚本时，会保留 Certbot 管理的 HTTPS 配置。
 
 ## 数据隔离
 

@@ -39,8 +39,16 @@ cd "${PROJECT_DIR}"
 docker compose up -d --build
 
 install -d -m 755 /etc/nginx/sites-available /etc/nginx/sites-enabled
-install -m 644 "${PROJECT_DIR}/nginx/totod.cn.conf" /etc/nginx/sites-available/totod.cn
-ln -sfn /etc/nginx/sites-available/totod.cn /etc/nginx/sites-enabled/totod.cn
+nginx_site="/etc/nginx/sites-available/totod.cn"
+certificate_file="/etc/letsencrypt/live/totod.cn/fullchain.pem"
+
+if [[ -f "${certificate_file}" && -f "${nginx_site}" ]]; then
+  echo "检测到现有 HTTPS 证书，保留 Certbot 管理的 Nginx 配置"
+else
+  install -m 644 "${PROJECT_DIR}/nginx/totod.cn.conf" "${nginx_site}"
+fi
+
+ln -sfn "${nginx_site}" /etc/nginx/sites-enabled/totod.cn
 if [[ -L /etc/nginx/sites-enabled/default ]]; then
   unlink /etc/nginx/sites-enabled/default
 fi
