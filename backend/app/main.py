@@ -11,7 +11,7 @@ from app.api import (
     products_router,
 )
 from app.core.config import settings
-from app.db.session import create_schema
+from app.db.session import create_schema, engine
 import app.models  # noqa: F401 - registers database models
 
 
@@ -19,7 +19,10 @@ import app.models  # noqa: F401 - registers database models
 async def lifespan(_: FastAPI):
     settings.account_data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     await create_schema()
-    yield
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 
 app = FastAPI(
