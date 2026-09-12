@@ -8,6 +8,15 @@ from app.schemas.article import (
     ArticleRead,
     ArticleUpdate,
 )
+from app.schemas.article_prompt import (
+    PromptFolderCreate,
+    PromptFolderRead,
+    PromptFolderUpdate,
+    PromptTemplateCreate,
+    PromptTemplateListResponse,
+    PromptTemplateRead,
+    PromptTemplateUpdate,
+)
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 from app.schemas.auth import LoginRequest, LoginResponse, UserRead
 
@@ -23,6 +32,13 @@ __all__ = [
     "ArticleListResponse",
     "ArticleRead",
     "ArticleUpdate",
+    "PromptFolderCreate",
+    "PromptFolderRead",
+    "PromptFolderUpdate",
+    "PromptTemplateCreate",
+    "PromptTemplateListResponse",
+    "PromptTemplateRead",
+    "PromptTemplateUpdate",
     "LoginRequest",
     "LoginResponse",
     "UserRead",

@@ -7,8 +7,9 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.9.0">
-  <link rel="stylesheet" href="/assets/login.css?v=0.9.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.10.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.10.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.10.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -205,6 +206,11 @@
         <section class="page-heading"><div><span class="eyebrow">AI 批量内容生产</span><h1>文章生成</h1><p>选择账号、关键词文件夹、推广商品和 AI 模型，按照提示词批量生成知乎文章。</p></div></section>
         <form id="article-generate-form" class="panel article-generator">
           <div class="panel-head"><div><span class="eyebrow">生成设置</span><h3>选择素材与模型</h3></div><span id="article-generate-estimate" class="badge off">将生成 0 篇</span></div>
+          <div class="prompt-template-toolbar">
+            <div><label for="prompt-folder-filter">提示词文件夹</label><select id="prompt-folder-filter"><option value="">全部文件夹</option></select></div>
+            <div><label for="prompt-template-select">提示词模板</label><select id="prompt-template-select"><option value="">当前未使用已保存模板</option></select></div>
+            <div class="prompt-template-actions"><button id="prompt-folder-create" class="button button-ghost" type="button">新建文件夹</button><button id="prompt-folder-rename" class="button button-ghost" type="button">文件夹改名</button><button id="prompt-folder-delete" class="button button-ghost danger-text" type="button">删除文件夹</button><button id="prompt-template-save" class="button button-primary" type="button">另存为模板</button><button id="prompt-template-update" class="button button-ghost" type="button">保存修改</button><button id="prompt-template-rename" class="button button-ghost" type="button">模板改名</button><button id="prompt-template-delete" class="button button-ghost danger-text" type="button">删除模板</button></div>
+          </div>
           <div class="article-generator-body">
             <div class="article-generator-fields">
               <div class="field-grid">
@@ -225,6 +231,7 @@
               <label for="article-content-prompt">正文提示词</label>
               <textarea id="article-content-prompt" rows="6" maxlength="20000">围绕{关键词}写一篇专业、自然、有实际帮助的知乎文章。商品名称：{商品名称}。商品简介：{商品简介}。核心卖点：{商品卖点}。目标人群：{目标人群}。推广链接：{推广链接}。根据这些真实资料进行适度推荐，避免生硬广告和禁用表述。</textarea>
               <p class="field-help">可用变量：{关键词}、{商品名称}、{商品分类}、{商品简介}、{商品卖点}、{目标人群}、{推广链接}、{内容要求}、{禁用表述}</p>
+              <div><label for="article-output-mode">生成完成后</label><select id="article-output-mode"><option value="draft">保存到草稿库</option><option value="immediate">立即发布到知乎（需账号已登录）</option></select></div>
             </div>
             <div class="article-keyword-picker">
               <div class="picker-head"><div><strong>选择关键词</strong><small id="article-keyword-count">共 0 个</small></div><label class="select-all"><input id="article-keyword-select-all" type="checkbox"> 全选当前结果</label></div>
@@ -233,6 +240,7 @@
               <div id="article-keyword-empty" class="mini-empty"><span>⌕</span><p>选择账号后加载关键词</p></div>
             </div>
           </div>
+          <div id="article-generation-job" class="article-job-panel" hidden><div class="job-status-row"><div><span id="article-generation-status" class="badge">等待中</span><strong id="article-generation-percent">0%</strong></div><span id="article-generation-count">0 / 0</span></div><div class="progress-track"><i id="article-generation-bar"></i></div><p id="article-generation-current">等待任务开始</p><p id="article-generation-message" class="job-message"></p><div class="job-controls"><button id="article-generation-pause" class="button button-ghost" type="button">暂停</button><button id="article-generation-resume" class="button button-primary" type="button">继续</button><button id="article-generation-stop" class="button button-ghost danger-text" type="button">停止</button></div></div>
           <div class="generator-submit"><div><strong id="article-selected-summary">已选 0 个关键词</strong><small id="article-generate-progress">生成后的文章先保存为草稿</small></div><p id="article-generate-error" class="form-error" role="alert"></p><button id="article-generate-submit" class="button button-primary" type="submit">开始生成文章</button></div>
         </form>
       </div>
@@ -241,7 +249,8 @@
         <section class="page-heading"><div><span class="eyebrow">文章内容资产</span><h1>文章列表</h1><p>统一查看各账号的草稿、待发布、已发布和失败文章，支持单选、全选与批量操作。</p></div><button class="button button-primary" data-page-link="article-generate">＋ 生成文章</button></section>
         <section class="panel content-list-panel">
           <div class="content-toolbar"><label class="search-box">⌕<input id="article-search" placeholder="搜索文章标题、关键词或商品"></label><select id="article-account-filter"><option value="">全部知乎账号</option></select><select id="article-status-filter"><option value="">全部状态</option><option value="draft">草稿</option><option value="ready">待发布</option><option value="published">已发布</option><option value="failed">失败</option></select><span id="article-total">共 0 篇</span></div>
-          <div class="selection-toolbar article-selection"><label class="select-all"><input id="article-select-all" type="checkbox"> 全选当前页</label><span id="article-selected-count">已选 0 篇</span><button id="article-mark-ready" class="button button-ghost" type="button" disabled>转为待发布</button><button id="article-bulk-delete" class="button button-ghost danger-text" type="button" disabled>删除所选</button></div>
+          <div class="selection-toolbar article-selection"><label class="select-all"><input id="article-select-all" type="checkbox"> 全选当前页</label><span id="article-selected-count">已选 0 篇</span><button id="article-bulk-publish" class="button button-primary" type="button" disabled>发布所选</button><button id="article-mark-ready" class="button button-ghost" type="button" disabled>转为待发布</button><button id="article-bulk-delete" class="button button-ghost danger-text" type="button" disabled>删除所选</button></div>
+          <div id="article-publish-job" class="article-job-panel compact" hidden><div class="job-status-row"><div><span id="article-publish-status" class="badge">等待中</span><strong id="article-publish-percent">0%</strong></div><span id="article-publish-count">0 / 0</span></div><div class="progress-track"><i id="article-publish-bar"></i></div><p id="article-publish-current">等待任务开始</p><p id="article-publish-message" class="job-message"></p><div class="job-controls"><button id="article-publish-pause" class="button button-ghost" type="button">暂停</button><button id="article-publish-resume" class="button button-primary" type="button">继续</button><button id="article-publish-stop" class="button button-ghost danger-text" type="button">停止</button></div></div>
           <div class="content-table header"><span>选择 / 标题</span><span>知乎账号</span><span>关键词</span><span>状态</span><span>生成时间</span><span>操作</span></div>
           <div id="article-list"></div>
           <div id="article-empty" class="empty-state"><span>▤</span><h3>文章列表为空</h3><p>选择关键词和推广商品生成第一批文章。</p><button class="button button-primary" data-page-link="article-generate">前往文章生成</button></div>
@@ -250,8 +259,8 @@
       </div>
 
       <div id="article-publish-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">账号配额自动执行</span><h1>自动发布</h1><p>按每个知乎账号设置的每日文章数量，自动选择待发布文章并错峰执行。</p></div></section>
-        <section class="panel module-placeholder"><span class="module-icon">↑</span><span class="badge off">功能待填充</span><h2>文章发布任务</h2><p>计划包含账号登录状态、每日配额、发布时间段、随机间隔、暂停/继续、发布链接和失败重试。</p><div class="feature-tags"><span>每日配额</span><span>错峰发布</span><span>失败重试</span><span>发布链接</span><span>风控限速</span></div></section>
+        <section class="page-heading"><div><span class="eyebrow">真实发布队列</span><h1>文章发布任务</h1><p>在文章列表选择一篇或多篇文章开始发布；这里同步显示发布百分比、成功/失败数量及控制按钮。</p></div><button class="button button-primary" data-page-link="articles">选择文章</button></section>
+        <section id="article-publish-job-page" class="panel article-job-panel standalone"><div class="job-status-row"><div><span id="article-publish-page-status" class="badge off">暂无任务</span><strong id="article-publish-page-percent">0%</strong></div><span id="article-publish-page-count">0 / 0</span></div><div class="progress-track"><i id="article-publish-page-bar"></i></div><p id="article-publish-page-current">请先到文章列表选择文章并点击“发布所选”</p><p id="article-publish-page-message" class="job-message"></p><div class="job-controls"><button id="article-publish-page-pause" class="button button-ghost" type="button" disabled>暂停</button><button id="article-publish-page-resume" class="button button-primary" type="button" disabled>继续</button><button id="article-publish-page-stop" class="button button-ghost danger-text" type="button" disabled>停止</button></div></section>
       </div>
 
       <div id="questions-page" class="page">
@@ -401,6 +410,6 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.9.0" defer></script>
+  <script src="/assets/app.js?v=0.10.0" defer></script>
 </body>
 </html>

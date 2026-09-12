@@ -1,3 +1,7 @@
+import uuid
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
@@ -12,6 +16,8 @@ from app.services.keyword_collector import (
 )
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 from app.services.zhihu_login import has_zhihu_auth_cookie
+from app.api.articles import _job_read
+from app.models.article_job import ArticleJobStatus, ArticleJobType
 
 
 def test_secret_round_trip() -> None:
@@ -76,10 +82,27 @@ def test_verification_page_detection() -> None:
 
 
 def test_zhihu_login_requires_real_auth_cookie() -> None:
-    assert has_zhihu_auth_cookie(
-        [{"name": "z_c0", "value": "encrypted-login-cookie"}]
-    )
-    assert not has_zhihu_auth_cookie(
-        [{"name": "d_c0", "value": "device-cookie"}]
-    )
+    assert has_zhihu_auth_cookie([{"name": "z_c0", "value": "encrypted-login-cookie"}])
+    assert not has_zhihu_auth_cookie([{"name": "d_c0", "value": "device-cookie"}])
     assert not has_zhihu_auth_cookie([{"name": "z_c0", "value": ""}])
+
+
+def test_article_job_progress_is_percentage() -> None:
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        account_id=None,
+        job_type=ArticleJobType.publish,
+        status=ArticleJobStatus.running,
+        output_mode=None,
+        total_count=8,
+        completed_count=3,
+        success_count=2,
+        failed_count=1,
+        current_item="发布测试文章",
+        error_message=None,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        completed_at=None,
+    )
+    assert _job_read(job).progress_percent == 38

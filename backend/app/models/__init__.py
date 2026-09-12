@@ -1,6 +1,13 @@
 from app.models.account import AccountStatus, ZhihuAccount
 from app.models.ai_provider import AIProviderConfig
 from app.models.article import Article, ArticleStatus
+from app.models.article_job import (
+    ArticleJob,
+    ArticleJobStatus,
+    ArticleJobType,
+    ArticleOutputMode,
+)
+from app.models.article_prompt import ArticlePromptFolder, ArticlePromptTemplate
 from app.models.keyword import AccountKeyword, KeywordSource
 from app.models.keyword_folder import (
     KeywordFolder,
@@ -22,6 +29,12 @@ __all__ = [
     "AIProviderConfig",
     "Article",
     "ArticleStatus",
+    "ArticleJob",
+    "ArticleJobStatus",
+    "ArticleJobType",
+    "ArticleOutputMode",
+    "ArticlePromptFolder",
+    "ArticlePromptTemplate",
     "KeywordCollectionJob",
     "KeywordFolder",
     "KeywordFolderItem",

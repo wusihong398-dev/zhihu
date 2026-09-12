@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from app.core.security import require_active_user
 from app.db.session import get_db
 from app.models.account import AccountStatus, ZhihuAccount
 from app.models.article import Article, ArticleStatus
+from app.models.article_job import ArticleJob, ArticleJobStatus, ArticleJobType
 from app.models.keyword import AccountKeyword
 from app.models.product import PromotedProduct
 from app.models.user import User, UserRole
@@ -21,11 +23,14 @@ from app.schemas.article import (
     ArticleCreate,
     ArticleGenerateRequest,
     ArticleGenerateResponse,
+    ArticleJobRead,
     ArticleListResponse,
+    ArticlePublishJobCreate,
     ArticleRead,
     ArticleUpdate,
 )
 from app.services.access_control import get_account_for_user
+from app.services.article_jobs import start_article_job
 from app.services.ai_providers import (
     AIProviderError,
     PROVIDERS,
@@ -48,6 +53,17 @@ def _content_length(value: str) -> int:
 def _article_read(article: Article, account_name: str = "") -> ArticleRead:
     return ArticleRead.model_validate(article).model_copy(
         update={"account_name": account_name}
+    )
+
+
+def _job_read(job: ArticleJob) -> ArticleJobRead:
+    percent = (
+        0
+        if not job.total_count
+        else min(100, round(job.completed_count * 100 / job.total_count))
+    )
+    return ArticleJobRead.model_validate(job).model_copy(
+        update={"progress_percent": percent}
     )
 
 
@@ -114,7 +130,9 @@ async def list_articles(
         .limit(limit)
     )
     return ArticleListResponse(
-        items=[_article_read(article, account_name) for article, account_name in result],
+        items=[
+            _article_read(article, account_name) for article, account_name in result
+        ],
         total=total or 0,
     )
 
@@ -172,7 +190,9 @@ async def generate_articles(
     )
     config = config_result.scalar_one_or_none()
     if config is None or not config.enabled or not config.api_key_encrypted:
-        raise HTTPException(status_code=400, detail="请先在 AI 配置中启用平台并保存 API Key")
+        raise HTTPException(
+            status_code=400, detail="请先在 AI 配置中启用平台并保存 API Key"
+        )
     try:
         api_key = decrypt_secret(config.api_key_encrypted)
     except ValueError as exc:
@@ -285,14 +305,10 @@ async def generate_articles(
             )
             if article.content_length < payload.min_length:
                 article.status = ArticleStatus.failed
-                article.error_message = (
-                    f"正文仅 {article.content_length} 字，少于最低 {payload.min_length} 字"
-                )
+                article.error_message = f"正文仅 {article.content_length} 字，少于最低 {payload.min_length} 字"
             elif article.content_length > payload.max_length:
                 article.status = ArticleStatus.failed
-                article.error_message = (
-                    f"正文 {article.content_length} 字，超过最高 {payload.max_length} 字"
-                )
+                article.error_message = f"正文 {article.content_length} 字，超过最高 {payload.max_length} 字"
             elif found_term:
                 article.status = ArticleStatus.failed
                 article.error_message = f"正文包含禁用表述：{found_term}"
@@ -311,6 +327,226 @@ async def generate_articles(
         success_count=success_count,
         failed_count=len(generated) - success_count,
     )
+
+
+@router.post(
+    "/accounts/{account_id}/article-jobs/generate",
+    response_model=ArticleJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_generation_job(
+    account_id: uuid.UUID,
+    payload: ArticleGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    await get_account_for_user(account_id, user, db)
+    definition = PROVIDERS.get(payload.provider)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="AI 平台不存在")
+    config_result = await db.execute(
+        select(UserAIProviderConfig).where(
+            UserAIProviderConfig.user_id == user.id,
+            UserAIProviderConfig.provider == payload.provider,
+        )
+    )
+    config = config_result.scalar_one_or_none()
+    if config is None or not config.enabled or not config.api_key_encrypted:
+        raise HTTPException(
+            status_code=400, detail="请先在 AI 配置中启用平台并保存 API Key"
+        )
+    try:
+        decrypt_secret(config.api_key_encrypted)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    model = (payload.model or config.model).strip()
+    if not model:
+        raise HTTPException(status_code=422, detail="请选择 AI 模型")
+    product = await db.get(PromotedProduct, payload.product_id)
+    if product is None or product.account_id != account_id or not product.enabled:
+        raise HTTPException(status_code=404, detail="启用的推广商品不存在")
+    keyword_result = await db.execute(
+        select(AccountKeyword.id).where(
+            AccountKeyword.account_id == account_id,
+            AccountKeyword.id.in_(payload.keyword_ids),
+        )
+    )
+    if len(list(keyword_result.scalars())) != len(set(payload.keyword_ids)):
+        raise HTTPException(status_code=404, detail="部分关键词不存在或不属于当前账号")
+    active = await db.scalar(
+        select(func.count(ArticleJob.id)).where(
+            ArticleJob.user_id == user.id,
+            ArticleJob.account_id == account_id,
+            ArticleJob.job_type == ArticleJobType.generate,
+            ArticleJob.status.in_(
+                [
+                    ArticleJobStatus.pending,
+                    ArticleJobStatus.running,
+                    ArticleJobStatus.paused,
+                ]
+            ),
+        )
+    )
+    if active:
+        raise HTTPException(status_code=409, detail="该账号已有未结束的文章生成任务")
+    job_payload = payload.model_dump(mode="json")
+    job_payload["account_id"] = str(account_id)
+    job_payload["model"] = model
+    job = ArticleJob(
+        user_id=user.id,
+        account_id=account_id,
+        job_type=ArticleJobType.generate,
+        status=ArticleJobStatus.pending,
+        output_mode=payload.output_mode,
+        total_count=len(payload.keyword_ids) * payload.articles_per_keyword,
+        payload_json=json.dumps(job_payload, ensure_ascii=False),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    start_article_job(job.id)
+    return _job_read(job)
+
+
+@router.post(
+    "/article-jobs/publish",
+    response_model=ArticleJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_publish_job(
+    payload: ArticlePublishJobCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    owned_ids = await _owned_article_ids(payload.article_ids, user, db)
+    if len(owned_ids) != len(set(payload.article_ids)):
+        raise HTTPException(status_code=404, detail="部分文章不存在或无权操作")
+    published_count = await db.scalar(
+        select(func.count(Article.id)).where(
+            Article.id.in_(owned_ids), Article.status == ArticleStatus.published
+        )
+    )
+    if published_count:
+        raise HTTPException(
+            status_code=400, detail="所选文章中包含已发布文章，请取消选择后重试"
+        )
+    active = await db.scalar(
+        select(func.count(ArticleJob.id)).where(
+            ArticleJob.user_id == user.id,
+            ArticleJob.job_type == ArticleJobType.publish,
+            ArticleJob.status.in_(
+                [
+                    ArticleJobStatus.pending,
+                    ArticleJobStatus.running,
+                    ArticleJobStatus.paused,
+                ]
+            ),
+        )
+    )
+    if active:
+        raise HTTPException(status_code=409, detail="已有未结束的文章发布任务")
+    job = ArticleJob(
+        user_id=user.id,
+        job_type=ArticleJobType.publish,
+        status=ArticleJobStatus.pending,
+        total_count=len(owned_ids),
+        payload_json=json.dumps({"article_ids": [str(value) for value in owned_ids]}),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    start_article_job(job.id)
+    return _job_read(job)
+
+
+@router.get("/article-jobs/latest", response_model=ArticleJobRead | None)
+async def latest_article_job(
+    job_type: ArticleJobType = Query(alias="type"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead | None:
+    result = await db.execute(
+        select(ArticleJob)
+        .where(ArticleJob.user_id == user.id, ArticleJob.job_type == job_type)
+        .order_by(ArticleJob.created_at.desc(), ArticleJob.id.desc())
+        .limit(1)
+    )
+    job = result.scalar_one_or_none()
+    return _job_read(job) if job else None
+
+
+@router.get("/article-jobs/{job_id}", response_model=ArticleJobRead)
+async def get_article_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    job = await db.get(ArticleJob, job_id)
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail="文章任务不存在")
+    return _job_read(job)
+
+
+async def _controlled_job(
+    job_id: uuid.UUID, user: User, db: AsyncSession
+) -> ArticleJob:
+    job = await db.get(ArticleJob, job_id)
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail="文章任务不存在")
+    return job
+
+
+@router.post("/article-jobs/{job_id}/pause", response_model=ArticleJobRead)
+async def pause_article_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    job = await _controlled_job(job_id, user, db)
+    if job.status not in {ArticleJobStatus.pending, ArticleJobStatus.running}:
+        raise HTTPException(status_code=409, detail="当前任务状态不能暂停")
+    job.status = ArticleJobStatus.paused
+    await db.commit()
+    await db.refresh(job)
+    return _job_read(job)
+
+
+@router.post("/article-jobs/{job_id}/resume", response_model=ArticleJobRead)
+async def resume_article_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    job = await _controlled_job(job_id, user, db)
+    if job.status != ArticleJobStatus.paused:
+        raise HTTPException(status_code=409, detail="只有暂停中的任务可以继续")
+    job.status = ArticleJobStatus.running
+    job.error_message = None
+    await db.commit()
+    await db.refresh(job)
+    start_article_job(job.id)
+    return _job_read(job)
+
+
+@router.post("/article-jobs/{job_id}/stop", response_model=ArticleJobRead)
+async def stop_article_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleJobRead:
+    job = await _controlled_job(job_id, user, db)
+    if job.status in {
+        ArticleJobStatus.stopped,
+        ArticleJobStatus.completed,
+        ArticleJobStatus.failed,
+    }:
+        raise HTTPException(status_code=409, detail="任务已经结束")
+    job.status = ArticleJobStatus.stopped
+    job.current_item = None
+    job.completed_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(job)
+    return _job_read(job)
 
 
 @router.get("/accounts/{account_id}/articles/{article_id}", response_model=ArticleRead)

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -82,6 +82,8 @@
   function logout(message = "") {
     window.clearTimeout(state.pollTimer);
     window.clearTimeout(state.zhihuLoginTimer);
+    window.clearTimeout(state.articleJobTimers.generate);
+    window.clearTimeout(state.articleJobTimers.publish);
     if (state.zhihuScreenshotUrl) URL.revokeObjectURL(state.zhihuScreenshotUrl);
     state.zhihuLogin = null;
     state.zhihuScreenshotUrl = "";
@@ -862,7 +864,140 @@
     else if (enabledProviders.length === 1) provider.value = enabledProviders[0].provider;
   }
 
+  function renderPromptLibrary() {
+    const folderSelect = $("#prompt-folder-filter");
+    const oldFolder = folderSelect.value;
+    folderSelect.innerHTML = `<option value="">全部文件夹</option>${state.promptFolders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}（${item.template_count}）</option>`).join("")}`;
+    if (state.promptFolders.some((item) => item.id === oldFolder)) folderSelect.value = oldFolder;
+    const selectedTemplate = $("#prompt-template-select").value;
+    const visible = folderSelect.value ? state.promptTemplates.filter((item) => item.folder_id === folderSelect.value) : state.promptTemplates;
+    $("#prompt-template-select").innerHTML = `<option value="">当前未使用已保存模板</option>${visible.map((item) => `<option value="${item.id}">${escapeHtml(item.folder_name ? `${item.folder_name} / ${item.name}` : item.name)}</option>`).join("")}`;
+    if (visible.some((item) => item.id === selectedTemplate)) $("#prompt-template-select").value = selectedTemplate;
+    const hasFolder = Boolean(folderSelect.value);
+    const hasTemplate = Boolean($("#prompt-template-select").value);
+    $("#prompt-folder-rename").disabled = !hasFolder;
+    $("#prompt-folder-delete").disabled = !hasFolder;
+    $("#prompt-template-update").disabled = !hasTemplate;
+    $("#prompt-template-rename").disabled = !hasTemplate;
+    $("#prompt-template-delete").disabled = !hasTemplate;
+  }
+
+  async function loadPromptLibrary() {
+    try {
+      const [folders, templates] = await Promise.all([api("/article-prompt-folders"), api("/article-prompt-templates")]);
+      state.promptFolders = folders;
+      state.promptTemplates = templates.items;
+      renderPromptLibrary();
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function selectPromptTemplate() {
+    const template = state.promptTemplates.find((item) => item.id === $("#prompt-template-select").value);
+    if (template) {
+      $("#article-title-prompt").value = template.title_prompt;
+      $("#article-content-prompt").value = template.content_prompt;
+      toast(`已切换到模板：${template.name}`);
+    }
+    renderPromptLibrary();
+  }
+
+  async function createPromptFolder() {
+    const name = window.prompt("新建提示词文件夹名称");
+    if (!name?.trim()) return;
+    try {
+      const folder = await api("/article-prompt-folders", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      await loadPromptLibrary();
+      $("#prompt-folder-filter").value = folder.id;
+      renderPromptLibrary();
+      toast("提示词文件夹已创建");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function renamePromptFolder() {
+    const folder = state.promptFolders.find((item) => item.id === $("#prompt-folder-filter").value);
+    if (!folder) return;
+    const name = window.prompt("修改文件夹名称", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+    try {
+      await api(`/article-prompt-folders/${folder.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      await loadPromptLibrary();
+      $("#prompt-folder-filter").value = folder.id;
+      renderPromptLibrary();
+      toast("提示词文件夹已重命名");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deletePromptFolder() {
+    const folder = state.promptFolders.find((item) => item.id === $("#prompt-folder-filter").value);
+    if (!folder || !window.confirm(`删除文件夹“${folder.name}”？模板会保留并移到未归档。`)) return;
+    try {
+      await api(`/article-prompt-folders/${folder.id}`, { method: "DELETE" });
+      $("#prompt-folder-filter").value = "";
+      await loadPromptLibrary();
+      toast("文件夹已删除，模板已保留");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function savePromptTemplate() {
+    const name = window.prompt("提示词模板名称");
+    if (!name?.trim()) return;
+    const selectedFolder = state.promptFolders.find((item) => item.id === $("#prompt-folder-filter").value);
+    const folderName = window.prompt("保存到文件夹（可留空；输入新名称会自动创建）", selectedFolder?.name || "") || "";
+    try {
+      const template = await api("/article-prompt-templates", { method: "POST", body: JSON.stringify({
+        name: name.trim(), folder_name: folderName.trim() || null,
+        title_prompt: $("#article-title-prompt").value.trim(), content_prompt: $("#article-content-prompt").value.trim()
+      }) });
+      await loadPromptLibrary();
+      if (template.folder_id) $("#prompt-folder-filter").value = template.folder_id;
+      renderPromptLibrary();
+      $("#prompt-template-select").value = template.id;
+      renderPromptLibrary();
+      toast("提示词模板已保存");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function updatePromptTemplate() {
+    const id = $("#prompt-template-select").value;
+    if (!id) return;
+    try {
+      await api(`/article-prompt-templates/${id}`, { method: "PATCH", body: JSON.stringify({
+        folder_id: $("#prompt-folder-filter").value || null,
+        title_prompt: $("#article-title-prompt").value.trim(), content_prompt: $("#article-content-prompt").value.trim()
+      }) });
+      await loadPromptLibrary();
+      $("#prompt-template-select").value = id;
+      renderPromptLibrary();
+      toast("模板修改已保存");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function renamePromptTemplate() {
+    const template = state.promptTemplates.find((item) => item.id === $("#prompt-template-select").value);
+    if (!template) return;
+    const name = window.prompt("修改模板名称", template.name);
+    if (!name?.trim() || name.trim() === template.name) return;
+    try {
+      await api(`/article-prompt-templates/${template.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      await loadPromptLibrary();
+      $("#prompt-template-select").value = template.id;
+      renderPromptLibrary();
+      toast("模板已重命名");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deletePromptTemplate() {
+    const template = state.promptTemplates.find((item) => item.id === $("#prompt-template-select").value);
+    if (!template || !window.confirm(`确定删除提示词模板“${template.name}”吗？`)) return;
+    try {
+      await api(`/article-prompt-templates/${template.id}`, { method: "DELETE" });
+      await loadPromptLibrary();
+      toast("提示词模板已删除");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
   async function loadArticleGenerator(resetSelection = false) {
+    await loadPromptLibrary();
     const accountId = $("#article-generate-account").value;
     if (!accountId) {
       state.articleGenerateKeywords = [];
@@ -909,10 +1044,10 @@
     if (!$("#article-generate-product").value) return $("#article-generate-error").textContent = "请选择推广商品";
     if (!provider) return $("#article-generate-error").textContent = "请先在 AI 配置中保存并启用平台";
     if (total > 50) return $("#article-generate-error").textContent = "单次最多生成 50 篇文章，请减少关键词或每词篇数";
-    setBusy(button, true, `正在生成 ${total} 篇…`);
-    $("#article-generate-progress").textContent = "正在调用 AI，请不要关闭页面；完成后会自动进入文章列表。";
+    button.disabled = true;
+    $("#article-generate-progress").textContent = "任务创建后可查看百分比，也可暂停、继续或停止。";
     try {
-      const result = await api(`/accounts/${accountId}/articles/generate`, {
+      const result = await api(`/accounts/${accountId}/article-jobs/generate`, {
         method: "POST",
         body: JSON.stringify({
           keyword_ids: keywordIds,
@@ -923,18 +1058,87 @@
           min_length: Number($("#article-min-length").value),
           max_length: Number($("#article-max-length").value),
           title_prompt: $("#article-title-prompt").value.trim(),
-          content_prompt: $("#article-content-prompt").value.trim()
+          content_prompt: $("#article-content-prompt").value.trim(),
+          output_mode: $("#article-output-mode").value
         })
       });
-      $("#article-generate-progress").textContent = `完成：成功 ${result.success_count} 篇，失败 ${result.failed_count} 篇`;
-      toast(`生成完成：成功 ${result.success_count} 篇，失败 ${result.failed_count} 篇`, result.failed_count ? "error" : "success");
-      state.articlePage = 1;
-      await loadArticles(true);
-      navigate("articles");
+      state.generationJob = result;
+      renderArticleJob("generate", result);
+      scheduleArticleJobPoll("generate", result.id);
+      toast("文章生成任务已开始");
     } catch (error) {
       $("#article-generate-error").textContent = error.message;
-      $("#article-generate-progress").textContent = "生成未完成，请根据错误提示检查设置";
-    } finally { setBusy(button, false); }
+      $("#article-generate-progress").textContent = "任务未创建，请根据错误提示检查设置";
+      button.disabled = false;
+    }
+  }
+
+  const articleJobStatusLabels = { pending: "等待中", running: "执行中", paused: "已暂停", stopped: "已停止", completed: "已完成", failed: "任务失败" };
+  const activeArticleJobStatuses = new Set(["pending", "running", "paused"]);
+
+  function renderJobAt(prefix, job, container) {
+    if (!container) return;
+    container.hidden = !job && !container.classList.contains("standalone");
+    if (!job) return;
+    $(`#${prefix}-status`).textContent = articleJobStatusLabels[job.status] || job.status;
+    $(`#${prefix}-status`).className = `badge ${job.status === "failed" || job.status === "stopped" ? "danger" : job.status === "paused" ? "warning" : ""}`;
+    $(`#${prefix}-percent`).textContent = `${job.progress_percent}%`;
+    $(`#${prefix}-count`).textContent = `${job.completed_count} / ${job.total_count} · 成功 ${job.success_count} · 失败 ${job.failed_count}`;
+    $(`#${prefix}-bar`).style.width = `${job.progress_percent}%`;
+    $(`#${prefix}-current`).textContent = job.current_item || (job.status === "completed" ? "全部处理完成" : job.status === "stopped" ? "任务已停止" : "等待下一项");
+    $(`#${prefix}-message`).textContent = job.error_message || "";
+    $(`#${prefix}-pause`).disabled = !["pending", "running"].includes(job.status);
+    $(`#${prefix}-resume`).disabled = job.status !== "paused";
+    $(`#${prefix}-stop`).disabled = !activeArticleJobStatuses.has(job.status);
+  }
+
+  function renderArticleJob(type, job) {
+    if (type === "generate") {
+      state.generationJob = job;
+      renderJobAt("article-generation", job, $("#article-generation-job"));
+      $("#article-generate-submit").disabled = Boolean(job && activeArticleJobStatuses.has(job.status));
+      if (job) $("#article-generate-progress").textContent = `${articleJobStatusLabels[job.status]}：${job.progress_percent}%`;
+      return;
+    }
+    state.publishJob = job;
+    renderJobAt("article-publish", job, $("#article-publish-job"));
+    renderJobAt("article-publish-page", job, $("#article-publish-job-page"));
+  }
+
+  function scheduleArticleJobPoll(type, id) {
+    window.clearTimeout(state.articleJobTimers[type]);
+    state.articleJobTimers[type] = window.setTimeout(() => pollArticleJob(type, id), 1200);
+  }
+
+  async function pollArticleJob(type, id) {
+    try {
+      const before = type === "generate" ? state.generationJob : state.publishJob;
+      const job = await api(`/article-jobs/${id}`);
+      renderArticleJob(type, job);
+      if (!before || before.completed_count !== job.completed_count) await loadArticles(true);
+      if (activeArticleJobStatuses.has(job.status)) return scheduleArticleJobPoll(type, id);
+      await loadAccounts(true);
+      toast(`${type === "generate" ? "文章生成" : "文章发布"}${articleJobStatusLabels[job.status]}：成功 ${job.success_count} 篇，失败 ${job.failed_count} 篇`, job.failed_count || job.status === "failed" ? "error" : "success");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function loadLatestArticleJob(type) {
+    try {
+      const job = await api(`/article-jobs/latest?type=${type}`);
+      renderArticleJob(type, job);
+      if (job && activeArticleJobStatuses.has(job.status)) scheduleArticleJobPoll(type, job.id);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function controlArticleJob(type, action) {
+    const job = type === "generate" ? state.generationJob : state.publishJob;
+    if (!job) return;
+    try {
+      const updated = await api(`/article-jobs/${job.id}/${action}`, { method: "POST" });
+      renderArticleJob(type, updated);
+      if (activeArticleJobStatuses.has(updated.status)) scheduleArticleJobPoll(type, updated.id);
+      toast(action === "pause" ? "任务已暂停；当前正在处理的一篇完成后生效" : action === "resume" ? "任务已继续" : "已请求停止；当前正在处理的一篇完成后停止");
+    } catch (error) { toast(error.message, "error"); }
   }
 
   function articleStatusLabel(value) {
@@ -942,7 +1146,8 @@
   }
 
   function articleActionButtons(item) {
-    const publish = item.status === "ready" ? `<button class="button button-primary article-publish" type="button">发布到知乎</button>` : "";
+    const publishing = Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
+    const publish = item.status !== "published" ? `<button class="button button-primary article-publish" type="button" ${publishing ? "disabled" : ""}>发布到知乎</button>` : "";
     const view = item.status === "published" && item.published_url ? `<a class="button button-ghost article-view" href="${escapeHtml(item.published_url)}" target="_blank" rel="noopener noreferrer">查看</a>` : "";
     return `${publish}${view}<button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button>`;
   }
@@ -955,6 +1160,8 @@
     $("#article-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
     $("#article-mark-ready").disabled = state.selectedArticles.size === 0;
     $("#article-bulk-delete").disabled = state.selectedArticles.size === 0;
+    const selectedItems = (state.articles.items || []).filter((item) => state.selectedArticles.has(item.id));
+    $("#article-bulk-publish").disabled = !selectedItems.length || selectedItems.some((item) => item.status === "published") || Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
   }
 
   function renderArticles() {
@@ -1036,22 +1243,28 @@
   }
 
   async function publishArticle(event) {
-    const button = event.currentTarget;
-    const articleId = button.closest(".article-row").dataset.articleId;
+    const articleId = event.currentTarget.closest(".article-row").dataset.articleId;
     const article = state.articles.items.find((item) => item.id === articleId);
     if (!article || !window.confirm(`确定使用“${article.account_name}”发布文章“${article.title}”吗？`)) return;
-    setBusy(button, true, "正在发布…");
+    await startPublishJob([article.id]);
+  }
+
+  async function startPublishJob(ids = [...state.selectedArticles]) {
+    if (!ids.length) return;
     try {
-      const result = await api(`/accounts/${article.account_id}/articles/${article.id}/publish`, { method: "POST" });
-      await loadArticles(true);
-      await loadAccounts(true);
-      toast("文章已真实发布到知乎");
-      if (result.published_url && window.confirm("发布成功，是否打开知乎文章？")) window.open(result.published_url, "_blank", "noopener");
-    } catch (error) {
-      toast(error.message, "error");
-      await loadArticles(true);
-      await loadAccounts(true);
-    } finally { setBusy(button, false); }
+      const job = await api("/article-jobs/publish", { method: "POST", body: JSON.stringify({ article_ids: ids }) });
+      state.selectedArticles.clear();
+      renderArticleJob("publish", job);
+      renderArticles();
+      scheduleArticleJobPoll("publish", job.id);
+      toast(`已开始发布 ${ids.length} 篇文章`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function publishSelectedArticles() {
+    const ids = [...state.selectedArticles];
+    if (!ids.length || !window.confirm(`确定将选中的 ${ids.length} 篇文章加入真实发布队列吗？`)) return;
+    await startPublishJob(ids);
   }
 
   async function bulkArticleStatus() {
@@ -1086,8 +1299,9 @@
     if (page === "keywords") loadKeywordData(true);
     if (page === "products") loadProducts(true);
     if (page === "users") loadUsers(true);
-    if (page === "article-generate") loadArticleGenerator(false);
-    if (page === "articles") loadArticles(true);
+    if (page === "article-generate") { loadArticleGenerator(false); loadLatestArticleJob("generate"); }
+    if (page === "articles") { loadArticles(true); loadLatestArticleJob("publish"); }
+    if (page === "article-publish") loadLatestArticleJob("publish");
   }
 
   function refreshCurrentPage() {
@@ -1163,6 +1377,15 @@
     $("#keyword-next").addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((state.keywords.total || 0) / state.keywordPageSize)); if (state.keywordPage < totalPages) { state.keywordPage += 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
     $("#article-generate-account").addEventListener("change", () => { $("#article-generate-folder").value = "all"; $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
     $("#article-generate-folder").addEventListener("change", () => { $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
+    $("#prompt-folder-filter").addEventListener("change", renderPromptLibrary);
+    $("#prompt-template-select").addEventListener("change", selectPromptTemplate);
+    $("#prompt-folder-create").addEventListener("click", createPromptFolder);
+    $("#prompt-folder-rename").addEventListener("click", renamePromptFolder);
+    $("#prompt-folder-delete").addEventListener("click", deletePromptFolder);
+    $("#prompt-template-save").addEventListener("click", savePromptTemplate);
+    $("#prompt-template-update").addEventListener("click", updatePromptTemplate);
+    $("#prompt-template-rename").addEventListener("click", renamePromptTemplate);
+    $("#prompt-template-delete").addEventListener("click", deletePromptTemplate);
     $("#article-keyword-search").addEventListener("input", renderArticleKeywordOptions);
     $("#article-keyword-select-all").addEventListener("change", (event) => {
       const query = $("#article-keyword-search").value.trim().toLowerCase();
@@ -1171,12 +1394,18 @@
     });
     $("#articles-per-keyword").addEventListener("input", updateArticleGenerateEstimate);
     $("#article-generate-form").addEventListener("submit", generateArticles);
+    $("#article-output-mode").addEventListener("change", () => { $("#article-generate-progress").textContent = $("#article-output-mode").value === "immediate" ? "生成成功后立即发布；请确认知乎账号已经登录" : "生成成功后保存到草稿库"; });
+    $("#article-generation-pause").addEventListener("click", () => controlArticleJob("generate", "pause"));
+    $("#article-generation-resume").addEventListener("click", () => controlArticleJob("generate", "resume"));
+    $("#article-generation-stop").addEventListener("click", () => controlArticleJob("generate", "stop"));
     $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
     $("#article-status-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
     $("#article-search").addEventListener("input", () => { window.clearTimeout(state.articleSearchTimer); state.articleSearchTimer = window.setTimeout(() => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); }, 300); });
     $("#article-select-all").addEventListener("change", (event) => { (state.articles.items || []).forEach((item) => event.currentTarget.checked ? state.selectedArticles.add(item.id) : state.selectedArticles.delete(item.id)); updateArticleSelection(); renderArticles(); });
     $("#article-mark-ready").addEventListener("click", bulkArticleStatus);
+    $("#article-bulk-publish").addEventListener("click", publishSelectedArticles);
     $("#article-bulk-delete").addEventListener("click", bulkDeleteArticles);
+    [["#article-publish-pause", "pause"], ["#article-publish-resume", "resume"], ["#article-publish-stop", "stop"], ["#article-publish-page-pause", "pause"], ["#article-publish-page-resume", "resume"], ["#article-publish-page-stop", "stop"]].forEach(([selector, action]) => $(selector).addEventListener("click", () => controlArticleJob("publish", action)));
     $("#article-prev").addEventListener("click", () => { if (state.articlePage > 1) { state.articlePage -= 1; state.selectedArticles.clear(); loadArticles(true); } });
     $("#article-next").addEventListener("click", () => { const pages = Math.max(1, Math.ceil((state.articles.total || 0) / state.articlePageSize)); if (state.articlePage < pages) { state.articlePage += 1; state.selectedArticles.clear(); loadArticles(true); } });
     $("#article-form").addEventListener("submit", saveArticle);

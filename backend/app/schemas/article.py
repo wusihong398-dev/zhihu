@@ -4,9 +4,16 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.article import ArticleStatus
+from app.models.article_job import (
+    ArticleJobStatus,
+    ArticleJobType,
+    ArticleOutputMode,
+)
 
 
-DEFAULT_TITLE_PROMPT = "围绕{关键词}拟一个自然、有吸引力、适合知乎阅读的标题，不要夸大承诺。"
+DEFAULT_TITLE_PROMPT = (
+    "围绕{关键词}拟一个自然、有吸引力、适合知乎阅读的标题，不要夸大承诺。"
+)
 DEFAULT_CONTENT_PROMPT = (
     "围绕{关键词}写一篇专业、自然、有实际帮助的知乎文章。商品名称：{商品名称}。"
     "商品简介：{商品简介}。核心卖点：{商品卖点}。目标人群：{目标人群}。"
@@ -38,8 +45,13 @@ class ArticleGenerateRequest(BaseModel):
     articles_per_keyword: int = Field(default=1, ge=1, le=5)
     min_length: int = Field(default=800, ge=100, le=10000)
     max_length: int = Field(default=1500, ge=100, le=20000)
-    title_prompt: str = Field(default=DEFAULT_TITLE_PROMPT, min_length=1, max_length=10000)
-    content_prompt: str = Field(default=DEFAULT_CONTENT_PROMPT, min_length=1, max_length=20000)
+    title_prompt: str = Field(
+        default=DEFAULT_TITLE_PROMPT, min_length=1, max_length=10000
+    )
+    content_prompt: str = Field(
+        default=DEFAULT_CONTENT_PROMPT, min_length=1, max_length=20000
+    )
+    output_mode: ArticleOutputMode = ArticleOutputMode.draft
 
     @model_validator(mode="after")
     def validate_batch(self):
@@ -92,3 +104,28 @@ class ArticleBulkRequest(BaseModel):
 
 class ArticleBulkResult(BaseModel):
     affected_count: int
+
+
+class ArticlePublishJobCreate(BaseModel):
+    article_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class ArticleJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    account_id: uuid.UUID | None
+    job_type: ArticleJobType
+    status: ArticleJobStatus
+    output_mode: ArticleOutputMode | None
+    total_count: int
+    completed_count: int
+    success_count: int
+    failed_count: int
+    current_item: str | None
+    error_message: str | None
+    progress_percent: int = 0
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None

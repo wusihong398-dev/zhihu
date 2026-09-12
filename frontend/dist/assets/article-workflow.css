@@ -1,0 +1,33 @@
+.prompt-template-toolbar {
+  display: grid;
+  grid-template-columns: 240px minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 14, 27, .32);
+}
+.prompt-template-toolbar label { display: block; margin-bottom: 7px; color: #8295b1; font-size: .72rem; }
+.prompt-template-toolbar select { height: 42px; }
+.prompt-template-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.prompt-template-actions .button { height: 36px; padding: 0 11px; font-size: .7rem; }
+.article-job-panel { padding: 20px 22px; border-top: 1px solid var(--line); background: #0a1729; }
+.article-job-panel.compact { border-top: 0; border-bottom: 1px solid var(--line); }
+.article-job-panel.standalone { min-height: 260px; border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+.article-job-panel .job-status-row > div { display: flex; align-items: center; gap: 12px; }
+.article-job-panel .job-status-row > div strong { font-size: 1.1rem; }
+.article-job-panel .job-status-row > span { color: #91a4bf; font-size: .8rem; }
+.article-job-panel .progress-track { margin: 16px 0; }
+.article-job-panel > p { margin: 8px 0; color: #91a4bf; font-size: .78rem; }
+.article-job-panel .job-message { color: #ff9cad; }
+.job-controls { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.job-controls .button { height: 36px; font-size: .72rem; }
+@media (max-width: 1250px) {
+  .prompt-template-toolbar { grid-template-columns: 1fr 1fr; }
+  .prompt-template-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 820px) {
+  .prompt-template-toolbar { grid-template-columns: 1fr; }
+  .prompt-template-actions { grid-column: auto; justify-content: flex-start; }
+  .job-controls { justify-content: flex-start; flex-wrap: wrap; }
+}

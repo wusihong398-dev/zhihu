@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api import (
     accounts_router,
     ai_router,
+    article_prompts_router,
     articles_router,
     auth_router,
     health_router,
@@ -14,6 +15,7 @@ from app.api import (
 )
 from app.core.config import settings
 from app.db.session import create_schema, engine
+from app.services.article_jobs import close_article_jobs, recover_article_jobs
 from app.services.zhihu_login import close_all_login_sessions
 import app.models  # noqa: F401 - registers database models
 
@@ -22,16 +24,18 @@ import app.models  # noqa: F401 - registers database models
 async def lifespan(_: FastAPI):
     settings.account_data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     await create_schema()
+    await recover_article_jobs()
     try:
         yield
     finally:
+        await close_article_jobs()
         await close_all_login_sessions()
         await engine.dispose()
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.9.0",
+    version="0.10.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
@@ -41,6 +45,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(accounts_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(articles_router, prefix="/api")
+app.include_router(article_prompts_router, prefix="/api")
 app.include_router(keywords_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
