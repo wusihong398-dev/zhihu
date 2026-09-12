@@ -50,6 +50,12 @@ bash scripts/bootstrap_server.sh
 docker compose exec backend python -m app.create_admin
 ```
 
+忘记管理员密码时，可在服务器交互式重置（不会显示输入的密码）：
+
+```bash
+docker compose exec backend python -m app.reset_admin_password
+```
+
 为 `totod.cn` 和 `www.totod.cn` 配置 Let's Encrypt HTTPS：
 
 ```bash
