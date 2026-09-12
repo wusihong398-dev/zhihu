@@ -20,6 +20,24 @@ from app.schemas.article_prompt import (
 )
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
 from app.schemas.auth import LoginRequest, LoginResponse, UserRead
+from app.schemas.qa import (
+    AnswerBulkRequest,
+    AnswerBulkResult,
+    AnswerCreate,
+    AnswerGenerateRequest,
+    AnswerJobRead,
+    AnswerListResponse,
+    AnswerPublishJobCreate,
+    AnswerRead,
+    AnswerUpdate,
+    AutoAnswerRunResponse,
+    AutoAnswerSummary,
+    QuestionBulkRequest,
+    QuestionCollectRequest,
+    QuestionCollectResponse,
+    QuestionListResponse,
+    QuestionRead,
+)
 
 __all__ = [
     "AccountCreate",
@@ -44,4 +62,20 @@ __all__ = [
     "LoginRequest",
     "LoginResponse",
     "UserRead",
+    "AnswerBulkRequest",
+    "AnswerBulkResult",
+    "AnswerCreate",
+    "AnswerGenerateRequest",
+    "AnswerJobRead",
+    "AnswerListResponse",
+    "AnswerPublishJobCreate",
+    "AnswerRead",
+    "AnswerUpdate",
+    "AutoAnswerRunResponse",
+    "AutoAnswerSummary",
+    "QuestionBulkRequest",
+    "QuestionCollectRequest",
+    "QuestionCollectResponse",
+    "QuestionListResponse",
+    "QuestionRead",
 ]

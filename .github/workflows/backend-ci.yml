@@ -57,5 +57,7 @@ jobs:
         run: python -m compileall -q app tests
       - name: Check admin frontend
         run: node --check ../frontend/dist/assets/app.js
+      - name: Check Q&A frontend
+        run: node --check ../frontend/dist/assets/qa.js
       - name: Run tests
         run: pytest -q

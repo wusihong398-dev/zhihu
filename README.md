@@ -30,6 +30,8 @@
 
 `v0.10.7`：文章列表新增“同步知乎文章”。系统使用所选账号的独立登录资料读取知乎本人已发布文章，按完整标题一对一匹配本地失败记录，自动补回真实文章链接与发布时间并移入“已发布”；不会重新发布、不会导入无关文章，也不会修改未匹配的草稿和待发布文章。同步任务与登录、发布共用账号锁，避免并发操作同一浏览器资料。
 
+`v0.11.0`：完成问答运营第一套真实闭环。问题采集使用对应知乎账号的独立登录资料搜索知乎问题，按知乎问题编号自动去重；可批量选择问题，并调用当前系统用户自己的 AI API 和账号推广商品生成回答。回答库按账号与草稿、待发布、已发布、失败四个栏目隔离，每页 100 个，支持批量选择、编辑、删除和发布。自动回答按每个知乎账号的每日回答额度执行，显示实时百分比、成功/失败数量，支持暂停、继续和停止，并保存发布尝试时间、公开回答链接及明确失败原因。遇到登录失效或安全验证时停止并提示人工处理，不绕过平台验证。
+
 `v0.9.0`：加入真实知乎扫码登录和单篇真实发布。每个知乎账号通过服务器 Chromium 打开知乎官方登录页，后台显示二维码并轮询登录结果；成功后的浏览器资料和 Cookie 保存在该账号自己的私有目录，其他系统用户不能查看二维码或复用会话。待发布文章可从文章列表使用对应账号发布到知乎，并保存发布链接；发布前再次核验真实 Cookie。账号列表显示真实登录状态，支持重新登录；遇到知乎安全验证时只提示人工完成，不尝试绕过。普通用户同时可以配置和使用自己的 AI API Key。文章、关键词和商品数据继续按系统用户与知乎账号隔离。
 
 ## 快速启动
@@ -69,6 +71,12 @@ bash scripts/bootstrap_server.sh
 - `GET/PATCH/DELETE /api/accounts/{account_id}/products/{product_id}`：读取、编辑或删除推广商品。
 - `POST /api/accounts/{account_id}/articles/generate`：按关键词、商品和模型批量生成文章。
 - `POST /api/accounts/{account_id}/articles/sync`：从当前知乎账号同步已发布文章并修正误判记录。
+- `POST /api/accounts/{account_id}/questions/collect`：使用该账号的知乎登录资料采集相关问题并去重。
+- `GET /api/accounts/{account_id}/questions`：分页查询账号独立问题库。
+- `POST /api/accounts/{account_id}/answer-jobs/generate`：按所选问题、商品和用户自己的 AI 配置生成回答。
+- `GET /api/accounts/{account_id}/answers`：按账号和状态分页查询回答库。
+- `POST /api/answer-jobs/publish/start`：创建真实知乎回答发布任务。
+- `GET/POST /api/accounts/{account_id}/auto-answer/summary|run`：查询并执行账号每日回答队列。
 - `POST /api/accounts/{account_id}/articles`：手动创建文章草稿。
 - `GET /api/articles`：按当前系统用户权限汇总查询文章，支持账号、状态和关键词筛选。
 - `GET/PATCH/DELETE /api/accounts/{account_id}/articles/{article_id}`：读取、编辑或删除文章。

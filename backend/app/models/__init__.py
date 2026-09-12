@@ -8,6 +8,8 @@ from app.models.article_job import (
     ArticleOutputMode,
 )
 from app.models.article_prompt import ArticlePromptFolder, ArticlePromptTemplate
+from app.models.answer import AnswerStatus, ZhihuAnswer
+from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
 from app.models.keyword import AccountKeyword, KeywordSource
 from app.models.keyword_folder import (
     KeywordFolder,
@@ -20,6 +22,7 @@ from app.models.keyword_job import (
     KeywordJobStatus,
 )
 from app.models.product import PromotedProduct
+from app.models.question import QuestionStatus, ZhihuQuestion
 from app.models.user import User, UserRole
 from app.models.user_ai_provider import UserAIProviderConfig
 
@@ -35,6 +38,10 @@ __all__ = [
     "ArticleOutputMode",
     "ArticlePromptFolder",
     "ArticlePromptTemplate",
+    "AnswerJob",
+    "AnswerJobStatus",
+    "AnswerJobType",
+    "AnswerStatus",
     "KeywordCollectionJob",
     "KeywordFolder",
     "KeywordFolderItem",
@@ -43,8 +50,11 @@ __all__ = [
     "KeywordJobStatus",
     "KeywordSource",
     "PromotedProduct",
+    "QuestionStatus",
     "User",
     "UserAIProviderConfig",
     "UserRole",
     "ZhihuAccount",
+    "ZhihuAnswer",
+    "ZhihuQuestion",
 ]

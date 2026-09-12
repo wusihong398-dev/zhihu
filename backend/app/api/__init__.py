@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.keywords import router as keywords_router
 from app.api.products import router as products_router
+from app.api.qa import router as qa_router
 from app.api.users import router as users_router
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "health_router",
     "keywords_router",
     "products_router",
+    "qa_router",
     "users_router",
 ]

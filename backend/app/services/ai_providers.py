@@ -96,6 +96,27 @@ def _extract_article_json(raw: str) -> tuple[str, str]:
     return title[:300], content
 
 
+def _extract_answer_json(raw: str) -> str:
+    cleaned = raw.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.S | re.I)
+    if fenced:
+        cleaned = fenced.group(1).strip()
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, flags=re.S)
+        if not match:
+            raise AIProviderError("模型没有返回可识别的回答 JSON")
+        try:
+            payload = json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            raise AIProviderError("模型返回的回答 JSON 格式不正确") from exc
+    content = str(payload.get("content", "")).strip()
+    if not content:
+        raise AIProviderError("模型返回内容缺少回答正文")
+    return content
+
+
 async def generate_article_content(
     definition: ProviderDefinition,
     api_key: str,
@@ -152,3 +173,63 @@ async def generate_article_content(
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise AIProviderError("AI 平台返回结构不正确") from exc
     return _extract_article_json(raw)
+
+
+async def generate_answer_content(
+    definition: ProviderDefinition,
+    api_key: str,
+    model: str,
+    *,
+    question_title: str,
+    question_excerpt: str,
+    instruction: str,
+    min_length: int,
+    max_length: int,
+) -> str:
+    system_prompt = (
+        "你是知乎问答内容编辑。请严格返回 JSON 对象，不要使用 Markdown 代码块，"
+        "JSON 仅包含 content 字符串字段。回答应先解决问题，再自然提及相关商品；"
+        "不得虚构亲身经历、数据、资质、医疗或法律效果，不得作保证性承诺。"
+    )
+    user_prompt = (
+        f"知乎问题：{question_title}\n"
+        f"问题补充：{question_excerpt or '无'}\n\n"
+        f"回答要求：\n{instruction}\n\n"
+        f"回答字数范围：{min_length} 至 {max_length} 个中文字符。"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=120, follow_redirects=False) as client:
+            response = await client.post(
+                f"{definition.base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "stream": False,
+                    "temperature": 0.7,
+                },
+            )
+    except httpx.TimeoutException as exc:
+        raise AIProviderError("AI 平台响应超时") from exc
+    except httpx.HTTPError as exc:
+        raise AIProviderError(f"AI 平台连接失败：{type(exc).__name__}") from exc
+    if not response.is_success:
+        try:
+            payload = response.json()
+            message = payload.get("error", {}).get("message") or payload.get("message")
+        except (ValueError, AttributeError):
+            message = None
+        raise AIProviderError(
+            f"AI 平台返回 {response.status_code}：{message or '请检查 API Key 和模型'}"
+        )
+    try:
+        raw = response.json()["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise AIProviderError("AI 平台返回结构不正确") from exc
+    return _extract_answer_json(raw)

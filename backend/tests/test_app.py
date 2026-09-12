@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.10.7"
+        assert version.json()["version"] == "0.11.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -58,3 +58,15 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert 'id="article-sync"' in index
     assert "syncPublishedArticles" in script
     assert "/articles/sync" in script
+
+
+def test_qa_pages_are_functional_modules() -> None:
+    index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "frontend/dist/assets/qa.js").read_text(encoding="utf-8")
+    assert 'id="question-collect-form"' in index
+    assert 'id="answer-list"' in index
+    assert 'id="auto-answer-run"' in index
+    assert "功能待填充</span><h2>知乎问题库" not in index
+    assert "/questions/collect" in script
+    assert "/answer-jobs/generate" in script
+    assert "/answer-jobs/publish/start" in script
