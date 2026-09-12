@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.core.security import require_active_user
 from app.main import app
 from app.models.user import UserRole
+from app.services.zhihu_publisher import ZhihuPublishError
 
 
 ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
@@ -132,5 +133,41 @@ def test_ready_article_can_be_published_with_its_account(monkeypatch) -> None:
             assert published.json()["status"] == "published"
             assert published.json()["published_url"].endswith("/123456789")
             assert published.json()["published_at"] is not None
+            assert published.json()["publish_attempted_at"] is not None
+    finally:
+        app.dependency_overrides.pop(require_active_user, None)
+
+
+def test_failed_publish_records_attempt_time_and_reason(monkeypatch) -> None:
+    async def fake_publish(account, article) -> str:
+        raise ZhihuPublishError("知乎测试拒绝发布")
+
+    monkeypatch.setattr("app.api.articles.publish_article_to_zhihu", fake_publish)
+    app.dependency_overrides[require_active_user] = lambda: ADMIN
+    try:
+        with TestClient(app) as client:
+            account = client.post(
+                "/api/accounts", json={"display_name": "失败时间测试账号"}
+            ).json()
+            article = client.post(
+                f"/api/accounts/{account['id']}/articles",
+                json={
+                    "title": "一篇会发布失败的文章",
+                    "content": "这篇文章用于验证失败后仍然记录发布时间。",
+                    "status": "ready",
+                },
+            ).json()
+            failed = client.post(
+                f"/api/accounts/{account['id']}/articles/{article['id']}/publish"
+            )
+            assert failed.status_code == 502
+
+            listed = client.get(
+                f"/api/articles?account_id={account['id']}&status=failed"
+            ).json()
+            saved = next(item for item in listed["items"] if item["id"] == article["id"])
+            assert saved["error_message"] == "知乎测试拒绝发布"
+            assert saved["publish_attempted_at"] is not None
+            assert saved["published_at"] is None
     finally:
         app.dependency_overrides.pop(require_active_user, None)

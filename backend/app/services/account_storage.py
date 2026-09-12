@@ -1,4 +1,5 @@
 import os
+import shutil
 import uuid
 from pathlib import Path
 
@@ -36,3 +37,20 @@ def remove_empty_account_storage(account_id: uuid.UUID) -> None:
         root.rmdir()
     except OSError:
         return
+
+
+def delete_account_storage(account_id: uuid.UUID, profile_key: str) -> None:
+    """Remove one exact account tree after its database row is deleted."""
+    base = settings.account_data_root.resolve()
+    account_root = (base / str(account_id)).resolve()
+    profile_root = (account_root / profile_key).resolve()
+    if account_root.parent != base or account_root.name != str(account_id):
+        raise ValueError("知乎账号存储目录校验失败")
+    if profile_root.parent != account_root or profile_root.name != profile_key:
+        raise ValueError("知乎账号资料目录校验失败")
+    if profile_root.is_dir():
+        shutil.rmtree(profile_root)
+    try:
+        account_root.rmdir()
+    except OSError:
+        pass

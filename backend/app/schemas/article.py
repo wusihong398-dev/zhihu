@@ -81,6 +81,7 @@ class ArticleRead(BaseModel):
     error_message: str | None
     published_url: str | None
     published_at: datetime | None
+    publish_attempted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

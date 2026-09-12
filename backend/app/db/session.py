@@ -58,6 +58,16 @@ async def create_schema() -> None:
                         "ON zhihu_accounts (owner_user_id)"
                     )
                 )
+            articles_exist = await connection.scalar(
+                text("SELECT to_regclass('public.articles') IS NOT NULL")
+            )
+            if articles_exist:
+                await connection.execute(
+                    text(
+                        "ALTER TABLE articles ADD COLUMN IF NOT EXISTS "
+                        "publish_attempted_at TIMESTAMPTZ NULL"
+                    )
+                )
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         # Older versions accepted /p/<id>/edit as a successful publication.
@@ -69,5 +79,16 @@ async def create_schema() -> None:
                 "published_at = NULL, "
                 "error_message = '历史记录保存的是知乎编辑页地址，未确认公开发布，请重新发布' "
                 "WHERE status = 'published' AND published_url LIKE '%/edit%'"
+            )
+        )
+        # Preserve a useful display time for publication records created before
+        # publish_attempted_at was introduced. For historical failures,
+        # updated_at is the closest available timestamp to the failed attempt.
+        await connection.execute(
+            text(
+                "UPDATE articles SET publish_attempted_at = "
+                "COALESCE(published_at, updated_at) "
+                "WHERE publish_attempted_at IS NULL "
+                "AND status IN ('published', 'failed')"
             )
         )

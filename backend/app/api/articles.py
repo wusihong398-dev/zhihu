@@ -608,18 +608,22 @@ async def publish_article(
         published_url = await publish_article_to_zhihu(account, article)
     except ZhihuLoginRequired as exc:
         account.status = AccountStatus.offline
+        article.status = ArticleStatus.failed
         article.error_message = str(exc)
+        article.publish_attempted_at = datetime.now(UTC)
         await db.commit()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ZhihuPublishError as exc:
         article.status = ArticleStatus.failed
         article.error_message = str(exc)
+        article.publish_attempted_at = datetime.now(UTC)
         await db.commit()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     account.status = AccountStatus.online
     article.status = ArticleStatus.published
     article.published_url = published_url
     article.published_at = datetime.now(UTC)
+    article.publish_attempted_at = article.published_at
     article.error_message = None
     await db.commit()
     await db.refresh(article)

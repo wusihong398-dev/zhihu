@@ -118,6 +118,32 @@ def test_managed_users_have_isolated_account_data_and_expiration() -> None:
             assert second_openai["model"] != "user-one-model"
             assert second_openai["has_api_key"] is False
 
+            updated_account = client.patch(
+                f"/api/accounts/{first_account_id}",
+                json={"display_name": "用户一修改后的知乎账号", "remark": "已编辑"},
+                headers=first_headers,
+            )
+            assert updated_account.status_code == 200
+            assert updated_account.json()["display_name"] == "用户一修改后的知乎账号"
+            assert (
+                client.delete(
+                    f"/api/accounts/{first_account_id}", headers=second_headers
+                ).status_code
+                == 404
+            )
+            assert (
+                client.delete(
+                    f"/api/accounts/{first_account_id}", headers=first_headers
+                ).status_code
+                == 204
+            )
+            assert (
+                client.get(
+                    f"/api/accounts/{first_account_id}", headers=first_headers
+                ).status_code
+                == 404
+            )
+
             app.dependency_overrides[require_admin] = lambda: object()
             expired = client.patch(
                 f"/api/users/{first_user.json()['id']}",

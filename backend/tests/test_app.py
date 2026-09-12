@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.10.3"
+        assert version.json()["version"] == "0.10.4"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -43,3 +43,8 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert ">发布到知乎</button>" not in script
     assert ">发布</button>" in script
     assert "失败原因：" in script
+    assert "发布时间" in index
+    assert "item.publish_attempted_at" in script
+    assert 'class="button button-ghost edit-account"' in script
+    assert 'class="button button-ghost danger-text delete-account"' in script
+    assert "登录资料、商品、关键词和文章将一并删除" in script

@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,14 +17,21 @@ from app.schemas.account import (
     ZhihuLoginSessionRead,
 )
 from app.services.access_control import get_account_for_user
-from app.services.account_storage import initialize_account_storage
+from app.services.account_storage import delete_account_storage, initialize_account_storage
+from app.services.browser_lock import (
+    get_account_browser_lock,
+    remove_account_browser_lock,
+)
 from app.services.zhihu_login import (
     ZhihuLoginError,
     cancel_login_session,
+    close_account_login_sessions,
     get_login_session,
     poll_login_session,
     start_login_session,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/accounts",
@@ -86,6 +94,31 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
     return account
+
+
+@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> Response:
+    account = await get_account_for_user(account_id, user, db)
+    await close_account_login_sessions(account.id)
+    browser_lock = get_account_browser_lock(account.id)
+    if browser_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="该账号正在发布文章，请先停止任务或等待当前文章处理完成",
+        )
+    profile_key = account.profile_key
+    await db.delete(account)
+    await db.commit()
+    try:
+        delete_account_storage(account_id, profile_key)
+    except (OSError, ValueError):
+        logger.exception("Failed to remove account storage for %s", account_id)
+    remove_account_browser_lock(account_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _login_session_response(session) -> ZhihuLoginSessionRead:

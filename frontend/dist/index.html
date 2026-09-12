@@ -7,9 +7,9 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.10.3">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.10.3">
-  <link rel="stylesheet" href="/assets/login.css?v=0.10.3">
+  <link rel="stylesheet" href="/assets/app.css?v=0.10.4">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.10.4">
+  <link rel="stylesheet" href="/assets/login.css?v=0.10.4">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -252,7 +252,7 @@
           <nav class="article-status-tabs" aria-label="文章栏目"><button class="article-status-tab active" data-status="draft" type="button"><span>草稿箱</span><small>编辑和整理</small></button><button class="article-status-tab" data-status="ready" type="button"><span>待发布</span><small>等待发布队列</small></button><button class="article-status-tab" data-status="published" type="button"><span>已发布</span><small>真实发布成功</small></button><button class="article-status-tab" data-status="failed" type="button"><span>发布失败</span><small>查看原因并重试</small></button></nav>
           <div class="selection-toolbar article-selection"><label class="select-all"><input id="article-select-all" type="checkbox"> 全选当前页</label><span id="article-selected-count">已选 0 篇</span><button id="article-bulk-publish" class="button button-primary" type="button" disabled>发布所选</button><button id="article-mark-ready" class="button button-ghost" type="button" disabled>转为待发布</button><button id="article-bulk-delete" class="button button-ghost danger-text" type="button" disabled>删除所选</button></div>
           <div id="article-publish-job" class="article-job-panel compact" hidden><div class="job-status-row"><div><span id="article-publish-status" class="badge">等待中</span><strong id="article-publish-percent">0%</strong></div><span id="article-publish-count">0 / 0</span></div><div class="progress-track"><i id="article-publish-bar"></i></div><p id="article-publish-current">等待任务开始</p><p id="article-publish-message" class="job-message"></p><div class="job-controls"><button id="article-publish-pause" class="button button-ghost" type="button">暂停</button><button id="article-publish-resume" class="button button-primary" type="button">继续</button><button id="article-publish-stop" class="button button-ghost danger-text" type="button">停止</button></div></div>
-          <div class="content-table header"><span>选择 / 标题</span><span>知乎账号</span><span>关键词</span><span>状态</span><span>生成时间</span><span>操作</span></div>
+          <div class="content-table header"><span>选择 / 标题</span><span>知乎账号</span><span>关键词</span><span>状态</span><span>发布时间</span><span>操作</span></div>
           <div id="article-list"></div>
           <div id="article-empty" class="empty-state"><span>▤</span><h3>文章列表为空</h3><p>选择关键词和推广商品生成第一批文章。</p><button class="button button-primary" data-page-link="article-generate">前往文章生成</button></div>
           <div id="article-pagination" class="pagination" hidden><button id="article-prev" class="button button-ghost" type="button">上一页</button><span id="article-page-info">第 1 / 1 页</span><button id="article-next" class="button button-ghost" type="button">下一页</button></div>
@@ -329,6 +329,8 @@
           <div><label for="article-limit">每天发布文章</label><input id="article-limit" name="daily_article_limit" type="number" min="0" max="100" value="3" required></div>
           <div><label for="answer-limit">每天回答问题</label><input id="answer-limit" name="daily_answer_limit" type="number" min="0" max="200" value="5" required></div>
         </div>
+        <label for="account-timezone">账号时区</label>
+        <input id="account-timezone" name="timezone" maxlength="64" value="Asia/Shanghai" placeholder="例如：Asia/Shanghai" required>
         <p class="field-help">设置为 0 表示该账号暂不执行对应任务。</p>
         <p id="account-error" class="form-error" role="alert"></p>
         <div class="dialog-actions"><button id="dialog-cancel" class="button button-ghost" type="button">取消</button><button id="account-submit" class="button button-primary" type="submit">保存账号</button></div>
@@ -411,6 +413,6 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.10.3" defer></script>
+  <script src="/assets/app.js?v=0.10.4" defer></script>
 </body>
 </html>

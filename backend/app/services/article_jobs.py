@@ -290,6 +290,7 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
                 except ZhihuPublishError as exc:
                     article.status = ArticleStatus.failed
                     article.error_message = str(exc)
+            article.publish_attempted_at = datetime.now(UTC)
 
         async with SessionLocal() as db:
             db.add(article)
@@ -366,6 +367,7 @@ async def _run_publish_job(job_id: uuid.UUID) -> None:
                 await db.commit()
                 continue
             current_account = await db.get(ZhihuAccount, current_article.account_id)
+            current_article.publish_attempted_at = datetime.now(UTC)
             if failure:
                 current_article.status = ArticleStatus.failed
                 current_article.error_message = failure

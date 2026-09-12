@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -126,7 +126,7 @@
       <label class="inline-field"><input class="answer-input" aria-label="${escapeHtml(account.display_name)}每日回答数量" type="number" min="0" max="200" value="${account.daily_answer_limit}"><span>个/天</span></label>
       <span class="badge login-status ${statusClass}">${statusLabel}</span>
       <label class="switch" title="启用或停用账号"><input class="enabled-input" type="checkbox" ${account.enabled ? "checked" : ""} aria-label="启用${escapeHtml(account.display_name)}"><i></i></label>
-      <div class="row-actions"><button class="button button-primary login-account" type="button">${account.status === "online" ? "重新登录" : "登录知乎"}</button><button class="button button-ghost save-account" type="button">保存设置</button></div>
+      <div class="row-actions"><button class="button button-primary login-account" type="button">${account.status === "online" ? "重新登录" : "登录知乎"}</button><button class="button button-ghost save-account" type="button">保存设置</button><button class="button button-ghost edit-account" type="button">编辑</button><button class="button button-ghost danger-text delete-account" type="button">删除</button></div>
     </div>`;
   }
 
@@ -139,6 +139,8 @@
     $("#accounts-empty").hidden = state.accounts.length !== 0 || query !== "";
     $$(".save-account", table).forEach((button) => button.addEventListener("click", saveAccount));
     $$(".login-account", table).forEach((button) => button.addEventListener("click", openZhihuLogin));
+    $$(".edit-account", table).forEach((button) => button.addEventListener("click", editAccount));
+    $$(".delete-account", table).forEach((button) => button.addEventListener("click", deleteAccount));
   }
 
   function renderAll() {
@@ -266,16 +268,44 @@
     $("#zhihu-login-dialog").hidden = true;
   }
 
-  function openAccountDialog() {
+  function openAccountDialog(account = null) {
+    const editing = account && account.id ? account : null;
+    state.editingAccountId = editing?.id || null;
     $("#account-form").reset();
-    $("#article-limit").value = 3;
-    $("#answer-limit").value = 5;
+    $("#dialog-title").textContent = editing ? "编辑知乎账号" : "添加知乎账号";
+    $("#account-submit").textContent = editing ? "保存修改" : "保存账号";
+    $("#display-name").value = editing?.display_name || "";
+    $("#remark").value = editing?.remark || "";
+    $("#article-limit").value = editing?.daily_article_limit ?? 3;
+    $("#answer-limit").value = editing?.daily_answer_limit ?? 5;
+    $("#account-timezone").value = editing?.timezone || "Asia/Shanghai";
     $("#account-error").textContent = "";
     $("#account-dialog").hidden = false;
     window.setTimeout(() => $("#display-name").focus(), 0);
   }
 
-  function closeAccountDialog() { $("#account-dialog").hidden = true; }
+  function closeAccountDialog() { $("#account-dialog").hidden = true; state.editingAccountId = null; }
+
+  function editAccount(event) {
+    const accountId = event.currentTarget.closest(".account-row").dataset.accountId;
+    openAccountDialog(state.accounts.find((item) => item.id === accountId));
+  }
+
+  async function deleteAccount(event) {
+    const accountId = event.currentTarget.closest(".account-row").dataset.accountId;
+    const account = state.accounts.find((item) => item.id === accountId);
+    if (!account || !window.confirm(`确定删除知乎账号“${account.display_name}”吗？\n\n该账号下的登录资料、商品、关键词和文章将一并删除，且无法恢复。`)) return;
+    const button = event.currentTarget;
+    setBusy(button, true, "删除中…");
+    try {
+      await api(`/accounts/${accountId}`, { method: "DELETE" });
+      await loadAccounts(true);
+      toast("知乎账号及其独立数据已删除");
+    } catch (error) {
+      toast(error.message, "error");
+      setBusy(button, false);
+    }
+  }
 
   async function createAccount(event) {
     event.preventDefault();
@@ -285,15 +315,16 @@
       remark: $("#remark").value.trim(),
       daily_article_limit: Number($("#article-limit").value),
       daily_answer_limit: Number($("#answer-limit").value),
-      timezone: "Asia/Shanghai"
+      timezone: $("#account-timezone").value.trim() || "Asia/Shanghai"
     };
     setBusy(submit, true, "保存中…");
     $("#account-error").textContent = "";
     try {
-      await api("/accounts", { method: "POST", body: JSON.stringify(payload) });
+      const editing = Boolean(state.editingAccountId);
+      await api(editing ? `/accounts/${state.editingAccountId}` : "/accounts", { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) });
       closeAccountDialog();
       await loadAccounts(true);
-      toast("知乎账号已添加");
+      toast(editing ? "知乎账号已修改，登录状态保持不变" : "知乎账号已添加");
     } catch (error) {
       $("#account-error").textContent = error.message;
     } finally {
@@ -1182,7 +1213,8 @@
       const failure = item.status === "failed"
         ? `<span class="article-failure-reason"><b>失败原因：</b>${escapeHtml(item.error_message || "系统没有返回具体原因，请重新发布后查看")}</span>`
         : `<small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small>`;
-      return `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong>${failure}</label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions">${articleActionButtons(item)}</div></div>`;
+      const publishTime = item.publish_attempted_at ? formatDateTime(item.publish_attempted_at) : "—";
+      return `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong>${failure}</label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${publishTime}</span><div class="article-actions">${articleActionButtons(item)}</div></div>`;
     }).join("");
     $("#article-empty").hidden = items.length !== 0;
     $("#article-empty h3").textContent = account ? "该账号还没有文章" : "请先添加知乎账号";
