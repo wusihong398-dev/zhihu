@@ -1,6 +1,10 @@
+import asyncio
+import html
 import re
 from datetime import UTC, datetime
 from typing import Any
+
+import httpx
 
 from app.core.config import settings
 from app.models.account import ZhihuAccount
@@ -16,6 +20,107 @@ class ZhihuPublishError(RuntimeError):
 
 class ZhihuLoginRequired(ZhihuPublishError):
     pass
+
+
+_ARTICLE_ID_RE = re.compile(r"^/p/(?P<article_id>\d+)(?:/edit)?/?$")
+
+
+def _article_id_from_url(url: str) -> str | None:
+    """Return a Zhihu column article id from either its public or edit URL."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.hostname != "zhuanlan.zhihu.com":
+        return None
+    match = _ARTICLE_ID_RE.fullmatch(parsed.path)
+    return match.group("article_id") if match else None
+
+
+def _public_article_url(url: str) -> str | None:
+    """Return a canonical public URL, refusing editor URLs as proof of success."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    article_id = _article_id_from_url(url)
+    if article_id is None or parsed.path.rstrip("/").endswith("/edit"):
+        return None
+    return f"https://zhuanlan.zhihu.com/p/{article_id}"
+
+
+def _normalized_title(value: str) -> str:
+    return "".join(html.unescape(value).split())
+
+
+async def _verify_public_article(
+    article_id: str,
+    expected_title: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+    attempts: int = 6,
+    wait_seconds: float = 2,
+) -> str:
+    """Verify the article through Zhihu's unauthenticated public article API."""
+    api_url = f"https://www.zhihu.com/api/v4/articles/{article_id}"
+    public_url = f"https://zhuanlan.zhihu.com/p/{article_id}"
+    owns_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=15,
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Referer": public_url,
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                ),
+            },
+        )
+    last_reason = "知乎公开接口没有返回文章"
+    try:
+        for attempt in range(max(attempts, 1)):
+            try:
+                response = await client.get(api_url)
+                if response.status_code == 200:
+                    payload = response.json()
+                    returned_id = str(payload.get("id", ""))
+                    returned_title = str(payload.get("title", ""))
+                    if returned_id != article_id:
+                        last_reason = "知乎公开接口返回了其他文章"
+                    elif not returned_title:
+                        last_reason = "知乎公开文章缺少标题"
+                    elif _normalized_title(returned_title) != _normalized_title(
+                        expected_title
+                    ):
+                        last_reason = "知乎公开文章标题与待发布文章不一致"
+                    else:
+                        return public_url
+                elif response.status_code == 404:
+                    last_reason = "公开文章不存在，知乎可能只保存了编辑草稿"
+                elif response.status_code in {401, 403, 429}:
+                    last_reason = (
+                        f"知乎公开核验被限制（HTTP {response.status_code}），"
+                        "无法确认文章已发布"
+                    )
+                else:
+                    last_reason = (
+                        f"知乎公开核验返回 HTTP {response.status_code}，"
+                        "无法确认文章已发布"
+                    )
+            except (httpx.HTTPError, ValueError):
+                last_reason = "连接知乎公开接口失败，无法确认文章已发布"
+            if attempt + 1 < max(attempts, 1):
+                await asyncio.sleep(wait_seconds)
+    finally:
+        if owns_client:
+            await client.aclose()
+    raise ZhihuPublishError(last_reason)
 
 
 async def _first_visible(page: Any, selectors: tuple[str, ...]) -> Any:
@@ -105,8 +210,8 @@ async def publish_article_to_zhihu(
         publish_button = await _first_visible(
             page,
             (
-                "button:has-text('发布')",
-                "[role='button']:has-text('发布')",
+                "button:text-is('发布')",
+                "[role='button']:text-is('发布')",
             ),
         )
         if publish_button is None:
@@ -114,28 +219,40 @@ async def publish_article_to_zhihu(
         await publish_button.click(timeout=5000)
         await page.wait_for_timeout(1200)
 
-        confirm = await _first_visible(
-            page,
-            (
-                "[role='dialog'] button:has-text('确认发布')",
-                "[role='dialog'] button:has-text('发布文章')",
-                "[role='dialog'] button:has-text('发布')",
-            ),
-        )
-        if confirm is not None:
-            await confirm.click(timeout=5000)
-
-        try:
-            await page.wait_for_url(
-                re.compile(r"https://zhuanlan\.zhihu\.com/p/\d+"), timeout=20000
+        # Zhihu may show one or more publish-setting dialogs. Only click exact
+        # confirmation labels inside a dialog so the editor's original button is
+        # never mistaken for the final confirmation button.
+        for _ in range(3):
+            confirm = await _first_visible(
+                page,
+                (
+                    "[role='dialog'] button:text-is('确认发布')",
+                    "[role='dialog'] button:text-is('发布文章')",
+                    "[role='dialog'] button:text-is('发布')",
+                    "[class*='Modal'] button:text-is('确认发布')",
+                    "[class*='Modal'] button:text-is('发布文章')",
+                    "[class*='Modal'] button:text-is('发布')",
+                ),
             )
-        except Exception:
-            success = page.locator("text=发布成功").first
-            if not await success.is_visible(timeout=1500):
-                raise ZhihuPublishError(
-                    "知乎未确认发布成功，可能需要选择话题或完成人工验证"
-                )
-        return page.url
+            if confirm is None:
+                break
+            await confirm.click(timeout=5000)
+            await page.wait_for_timeout(1200)
+
+        # An /edit URL only means that Zhihu allocated an editor draft. It is not
+        # evidence that the article is public. Extract the id, then independently
+        # verify it through the unauthenticated public article API.
+        article_id = None
+        for _ in range(20):
+            article_id = _article_id_from_url(page.url)
+            if article_id:
+                break
+            await page.wait_for_timeout(1000)
+        if article_id is None:
+            raise ZhihuPublishError(
+                "知乎未返回文章编号，可能需要选择话题或完成人工验证"
+            )
+        return await _verify_public_article(article_id, article.title)
     except (ZhihuLoginRequired, ZhihuPublishError):
         if context is not None and context.pages:
             try:

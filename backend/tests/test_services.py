@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -16,6 +17,12 @@ from app.services.keyword_collector import (
 )
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 from app.services.zhihu_login import has_zhihu_auth_cookie
+from app.services.zhihu_publisher import (
+    ZhihuPublishError,
+    _article_id_from_url,
+    _public_article_url,
+    _verify_public_article,
+)
 from app.api.articles import _job_read
 from app.models.article_job import ArticleJobStatus, ArticleJobType
 
@@ -85,6 +92,57 @@ def test_zhihu_login_requires_real_auth_cookie() -> None:
     assert has_zhihu_auth_cookie([{"name": "z_c0", "value": "encrypted-login-cookie"}])
     assert not has_zhihu_auth_cookie([{"name": "d_c0", "value": "device-cookie"}])
     assert not has_zhihu_auth_cookie([{"name": "z_c0", "value": ""}])
+
+
+def test_zhihu_public_url_does_not_accept_editor_url() -> None:
+    public = "https://zhuanlan.zhihu.com/p/2082171778986664628"
+    editor = f"{public}/edit"
+    assert _article_id_from_url(public) == "2082171778986664628"
+    assert _article_id_from_url(editor) == "2082171778986664628"
+    assert _public_article_url(public) == public
+    assert _public_article_url(f"{public}?utm_source=test") == public
+    assert _public_article_url(editor) is None
+    assert _public_article_url("https://example.com/p/2082171778986664628") is None
+
+
+def test_public_article_verification_requires_matching_public_record() -> None:
+    async def verify() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"id": 123456789, "title": "已公开的 测试文章"},
+                request=request,
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await _verify_public_article(
+                "123456789",
+                "已公开的测试文章",
+                client=client,
+                attempts=1,
+                wait_seconds=0,
+            )
+        assert result == "https://zhuanlan.zhihu.com/p/123456789"
+
+    asyncio.run(verify())
+
+
+def test_public_article_verification_rejects_missing_draft() -> None:
+    async def verify() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, request=request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(ZhihuPublishError, match="编辑草稿"):
+                await _verify_public_article(
+                    "2082171778986664628",
+                    "并未公开的文章",
+                    client=client,
+                    attempts=1,
+                    wait_seconds=0,
+                )
+
+    asyncio.run(verify())
 
 
 def test_article_job_progress_is_percentage() -> None:

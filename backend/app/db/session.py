@@ -60,3 +60,14 @@ async def create_schema() -> None:
                 )
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        # Older versions accepted /p/<id>/edit as a successful publication.
+        # Such a URL only proves that an editor draft exists, so make the
+        # historical record honest and allow the user to publish it again.
+        await connection.execute(
+            text(
+                "UPDATE articles SET status = 'failed', published_url = NULL, "
+                "published_at = NULL, "
+                "error_message = '历史记录保存的是知乎编辑页地址，未确认公开发布，请重新发布' "
+                "WHERE status = 'published' AND published_url LIKE '%/edit%'"
+            )
+        )
