@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordJob: null, page: "overview", pollTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -301,6 +301,15 @@
     $("#keyword-delete").disabled = state.selectedKeywords.size === 0;
   }
 
+  function renderKeywordPagination() {
+    const total = state.keywords.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / state.keywordPageSize));
+    $("#keyword-pagination").hidden = total === 0;
+    $("#keyword-page-info").textContent = `第 ${state.keywordPage} / ${totalPages} 页 · 每页 100 个 · 共 ${total} 个`;
+    $("#keyword-prev").disabled = state.keywordPage <= 1;
+    $("#keyword-next").disabled = state.keywordPage >= totalPages;
+  }
+
   function renderKeywords() {
     $("#keyword-total").textContent = `${state.keywords.total || 0} 个`;
     const items = state.keywords.items || [];
@@ -316,6 +325,7 @@
       updateKeywordSelection();
     }));
     updateKeywordSelection();
+    renderKeywordPagination();
   }
 
   function scheduleJobPoll() {
@@ -338,11 +348,17 @@
     try {
       const filter = $("#folder-filter").value;
       const query = filter === "unfiled" ? "&unfiled=true" : !["all", ""].includes(filter) ? `&folder_id=${encodeURIComponent(filter)}` : "";
+      const offset = (state.keywordPage - 1) * state.keywordPageSize;
       const [job, folders, keywords] = await Promise.all([
         api(`/accounts/${accountId}/keyword-jobs/latest`),
         api(`/accounts/${accountId}/keyword-folders`),
-        api(`/accounts/${accountId}/keywords?limit=500${query}`)
+        api(`/accounts/${accountId}/keywords?limit=${state.keywordPageSize}&offset=${offset}${query}`)
       ]);
+      const totalPages = Math.max(1, Math.ceil(keywords.total / state.keywordPageSize));
+      if (state.keywordPage > totalPages) {
+        state.keywordPage = totalPages;
+        return loadKeywordData(silent);
+      }
       state.keywordJob = job;
       state.keywordFolders = folders;
       state.keywords = keywords;
@@ -436,8 +452,10 @@
     state.page = page;
     $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
-    const titles = { overview: "运行概览", accounts: "知乎账号", keywords: "关键词采集", ai: "AI 配置" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", keywords: "关键词采集", "article-generate": "文章生成", articles: "文章列表", "article-publish": "自动发布", questions: "问题采集", answers: "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号与素材", products: "账号与素材", keywords: "关键词中心", "article-generate": "文章运营", articles: "文章运营", "article-publish": "文章运营", questions: "回答运营", answers: "回答运营", "auto-answer": "回答运营", schedules: "任务与系统", logs: "任务与系统", ai: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
+    $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
     if (page === "ai" && !state.providers.length) loadProviders(true);
     if (page === "keywords") loadKeywordData(true);
@@ -474,9 +492,9 @@
     $("#account-form").addEventListener("submit", createAccount);
     $("#account-search").addEventListener("input", renderAccounts);
     $("#keyword-form").addEventListener("submit", startKeywordJob);
-    $("#keyword-account").addEventListener("change", () => { $("#folder-filter").value = "all"; state.selectedKeywords.clear(); loadKeywordData(true); });
+    $("#keyword-account").addEventListener("change", () => { $("#folder-filter").value = "all"; state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); });
     $("#keyword-refresh").addEventListener("click", () => loadKeywordData());
-    $("#folder-filter").addEventListener("change", () => { state.selectedKeywords.clear(); loadKeywordData(true); });
+    $("#folder-filter").addEventListener("change", () => { state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); });
     $("#folder-create").addEventListener("click", createKeywordFolder);
     $("#folder-quick-create").addEventListener("click", createKeywordFolder);
     $("#folder-rename").addEventListener("click", renameKeywordFolder);
@@ -487,6 +505,8 @@
     });
     $("#keyword-move").addEventListener("click", moveSelectedKeywords);
     $("#keyword-delete").addEventListener("click", deleteSelectedKeywords);
+    $("#keyword-prev").addEventListener("click", () => { if (state.keywordPage > 1) { state.keywordPage -= 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
+    $("#keyword-next").addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((state.keywords.total || 0) / state.keywordPageSize)); if (state.keywordPage < totalPages) { state.keywordPage += 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
     $("#dialog-close").addEventListener("click", closeAccountDialog);
     $("#dialog-cancel").addEventListener("click", closeAccountDialog);
     $("#account-dialog").addEventListener("click", (event) => { if (event.target.id === "account-dialog") closeAccountDialog(); });
