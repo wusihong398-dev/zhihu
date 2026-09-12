@@ -21,6 +21,7 @@ from app.services.zhihu_publisher import (
     ZhihuPublishError,
     ZhihuPublicVerificationUnavailable,
     _article_id_from_url,
+    _check_public_page_snapshot,
     _is_publish_response,
     _publish_article_id,
     _publish_error_message,
@@ -213,6 +214,48 @@ def test_public_article_verification_falls_back_when_api_is_blocked() -> None:
                 )
 
     asyncio.run(verify())
+
+
+def test_public_page_snapshot_distinguishes_missing_from_blocked_render() -> None:
+    public_url = "https://zhuanlan.zhihu.com/p/2082171778986664628"
+    with pytest.raises(ZhihuPublishError, match="没有发布成功"):
+        _check_public_page_snapshot(
+            "2082171778986664628",
+            "等待核验的文章",
+            current_url=public_url,
+            response_status=200,
+            body_text="你似乎来到了没有知识存在的荒原",
+        )
+    with pytest.raises(ZhihuPublicVerificationUnavailable, match="无法二次核验"):
+        _check_public_page_snapshot(
+            "2082171778986664628",
+            "等待核验的文章",
+            current_url=public_url,
+            response_status=200,
+            body_text="知乎页面正在加载",
+            document_title="知乎",
+        )
+
+
+def test_public_page_snapshot_accepts_body_or_metadata_title() -> None:
+    public_url = "https://zhuanlan.zhihu.com/p/2082171778986664628"
+    _check_public_page_snapshot(
+        "2082171778986664628",
+        "已经发布的测试文章",
+        current_url=public_url,
+        response_status=200,
+        body_text="页面内容尚未渲染",
+        open_graph_title="已经发布的测试文章 - 知乎",
+    )
+    with pytest.raises(ZhihuPublishError, match="标题.*不一致"):
+        _check_public_page_snapshot(
+            "2082171778986664628",
+            "已经发布的测试文章",
+            current_url=public_url,
+            response_status=200,
+            body_text="页面内容尚未渲染",
+            open_graph_title="另一篇文章 - 知乎",
+        )
 
 
 def test_article_job_progress_is_percentage() -> None:

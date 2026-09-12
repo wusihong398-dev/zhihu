@@ -152,6 +152,73 @@ def _normalized_title(value: str) -> str:
     return "".join(html.unescape(value).split())
 
 
+def _public_page_title_matches(expected_title: str, *values: str | None) -> bool:
+    expected = _normalized_title(expected_title)
+    return bool(expected) and any(
+        expected in _normalized_title(value)
+        for value in values
+        if isinstance(value, str) and value.strip()
+    )
+
+
+def _check_public_page_snapshot(
+    article_id: str,
+    expected_title: str,
+    *,
+    current_url: str,
+    response_status: int | None,
+    body_text: str,
+    document_title: str = "",
+    open_graph_title: str = "",
+) -> None:
+    """Classify hard publication failures separately from blocked verification."""
+    if response_status == 404:
+        raise ZhihuPublishError("知乎公开文章不存在，可能只保存了编辑草稿")
+    if _public_article_url(current_url) != (
+        f"https://zhuanlan.zhihu.com/p/{article_id}"
+    ):
+        raise ZhihuPublicVerificationUnavailable(
+            "知乎公开文章页面被重定向，服务器暂时无法二次核验"
+        )
+    normalized_body = _normalized_title(body_text)
+    missing_markers = (
+        "你似乎来到了没有知识存在的荒原",
+        "内容不存在",
+        "页面不存在",
+    )
+    if any(_normalized_title(marker) in normalized_body for marker in missing_markers):
+        raise ZhihuPublishError("知乎公开页面显示内容不存在，文章没有发布成功")
+    if _public_page_title_matches(
+        expected_title,
+        body_text,
+        document_title,
+        open_graph_title,
+    ):
+        return
+    verification_markers = (
+        "安全验证",
+        "异常流量",
+        "验证码",
+        "登录知乎",
+        "注册知乎",
+    )
+    if any(_normalized_title(marker) in normalized_body for marker in verification_markers):
+        raise ZhihuPublicVerificationUnavailable(
+            "知乎公开页面触发登录或安全验证，服务器无法二次核验"
+        )
+    normalized_open_graph = _normalized_title(open_graph_title)
+    generic_open_graph = (
+        not normalized_open_graph
+        or normalized_open_graph == "知乎"
+        or "有问题，就会有答案" in normalized_open_graph
+    )
+    if not generic_open_graph:
+        raise ZhihuPublishError("知乎公开文章标题与待发布文章不一致")
+    raise ZhihuPublicVerificationUnavailable(
+        "知乎公开页面暂时未返回文章正文，服务器无法二次核验"
+    )
+
+
 async def _verify_public_article(
     article_id: str,
     expected_title: str,
@@ -229,7 +296,12 @@ async def _verify_public_article(
 
 
 async def _verify_public_article_page(
-    playwright: Any, article_id: str, expected_title: str
+    playwright: Any,
+    article_id: str,
+    expected_title: str,
+    *,
+    attempts: int = 3,
+    wait_seconds: float = 2,
 ) -> str:
     """Fallback verification in a clean browser when Zhihu blocks its API."""
     public_url = f"https://zhuanlan.zhihu.com/p/{article_id}"
@@ -246,30 +318,41 @@ async def _verify_public_article_page(
             viewport={"width": 1280, "height": 900},
         )
         page = await context.new_page()
-        response = await page.goto(
-            public_url,
-            wait_until="domcontentloaded",
-            timeout=30000,
-        )
-        await page.wait_for_timeout(2500)
-        if response is not None and response.status == 404:
-            raise ZhihuPublishError("知乎公开文章不存在，可能只保存了编辑草稿")
-        if _public_article_url(page.url) != public_url:
-            raise ZhihuPublishError("知乎公开文章地址未生效，可能仍处于编辑草稿状态")
-        body_text = await page.locator("body").inner_text(timeout=5000)
-        missing_markers = (
-            "你似乎来到了没有知识存在的荒原",
-            "内容不存在",
-            "页面不存在",
-        )
-        if any(marker in body_text for marker in missing_markers):
-            raise ZhihuPublishError("知乎公开页面显示内容不存在，文章没有发布成功")
-        if _normalized_title(expected_title) not in _normalized_title(body_text):
-            verification_markers = ("安全验证", "异常流量", "验证码")
-            if any(marker in body_text for marker in verification_markers):
-                raise ZhihuPublishError("知乎公开页面触发安全验证，无法确认发布成功")
-            raise ZhihuPublishError("知乎公开页面未显示文章标题，无法确认发布成功")
-        return public_url
+        for attempt in range(max(attempts, 1)):
+            response = await page.goto(
+                public_url,
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            await page.wait_for_timeout(2500)
+            body_text = await page.locator("body").inner_text(timeout=5000)
+            document_title = await page.title()
+            open_graph_title = ""
+            try:
+                open_graph_title = (
+                    await page.locator("meta[property='og:title']")
+                    .first
+                    .get_attribute("content", timeout=1500)
+                    or ""
+                )
+            except Exception:
+                pass
+            try:
+                _check_public_page_snapshot(
+                    article_id,
+                    expected_title,
+                    current_url=page.url,
+                    response_status=response.status if response is not None else None,
+                    body_text=body_text,
+                    document_title=document_title,
+                    open_graph_title=open_graph_title,
+                )
+                return public_url
+            except ZhihuPublicVerificationUnavailable:
+                if attempt + 1 >= max(attempts, 1):
+                    raise
+                await asyncio.sleep(wait_seconds)
+        raise ZhihuPublicVerificationUnavailable("服务器暂时无法二次核验知乎文章")
     except ZhihuPublishError:
         raise
     except Exception as exc:
@@ -559,12 +642,22 @@ async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> s
             raise ZhihuPublishError(
                 "知乎未返回文章编号，可能需要选择话题或完成人工验证"
             )
+        formal_publish_accepted = api_article_id is not None
         try:
             return await _verify_public_article(article_id, article.title)
         except ZhihuPublicVerificationUnavailable:
-            return await _verify_public_article_page(
-                playwright, article_id, article.title
-            )
+            try:
+                return await _verify_public_article_page(
+                    playwright, article_id, article.title
+                )
+            except ZhihuPublicVerificationUnavailable:
+                # A successful formal publish response containing the public id
+                # is authoritative. Public API/page checks are secondary and are
+                # frequently blocked for server IPs. Never trust an id obtained
+                # only from an /edit URL, and never hide an explicit 404.
+                if formal_publish_accepted:
+                    return f"https://zhuanlan.zhihu.com/p/{article_id}"
+                raise
     except (ZhihuLoginRequired, ZhihuPublishError):
         if context is not None and context.pages:
             try:
