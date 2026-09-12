@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_admin
 from app.db.session import get_db
 from app.models.account import ZhihuAccount
 from app.models.product import PromotedProduct
@@ -14,11 +13,12 @@ from app.schemas.product import (
     ProductRead,
     ProductUpdate,
 )
+from app.services.access_control import require_account_access
 
 router = APIRouter(
     prefix="/accounts/{account_id}/products",
     tags=["products"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_account_access)],
 )
 
 

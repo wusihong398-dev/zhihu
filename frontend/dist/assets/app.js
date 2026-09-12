@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -52,6 +52,9 @@
     const username = state.user?.username || "管理员";
     $("#user-name").textContent = username;
     $("#user-avatar").textContent = username.slice(0, 1).toUpperCase();
+    const isAdmin = state.user?.role === "admin";
+    $("#user-role-label").textContent = isAdmin ? "系统管理员" : "授权用户";
+    $$(".admin-only").forEach((element) => { element.hidden = !isAdmin; });
   }
 
   function showLogin(message = "") {
@@ -65,6 +68,7 @@
     window.clearTimeout(state.pollTimer);
     state.token = "";
     state.user = null;
+    state.users = [];
     state.accounts = [];
     sessionStorage.removeItem("totod_token");
     showLogin(message);
@@ -311,6 +315,106 @@
       await loadProducts(true);
       toast("推广商品已删除");
     } catch (error) { toast(error.message, "error"); }
+  }
+
+  const formatDateTime = (value) => value ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)) : "长期有效";
+
+  function userAuthorization(user) {
+    if (!user.is_active) return { label: "已停用", className: "off" };
+    if (user.expires_at && new Date(user.expires_at) <= new Date()) return { label: "已到期", className: "expired" };
+    return { label: "授权有效", className: "" };
+  }
+
+  function renderUsers() {
+    const query = $("#user-search").value.trim().toLowerCase();
+    const filtered = state.users.filter((user) => user.username.toLowerCase().includes(query));
+    const now = Date.now();
+    const sevenDays = now + 7 * 24 * 60 * 60 * 1000;
+    const active = state.users.filter((user) => user.is_active && (!user.expires_at || new Date(user.expires_at).getTime() > now));
+    const expiring = active.filter((user) => user.expires_at && new Date(user.expires_at).getTime() <= sevenDays);
+    $("#metric-users").textContent = state.users.length;
+    $("#metric-users-active").textContent = active.length;
+    $("#metric-users-expiring").textContent = expiring.length;
+    $("#metric-user-accounts").textContent = state.users.reduce((sum, user) => sum + user.account_count, 0);
+    $("#user-count").textContent = `共 ${state.users.length} 个用户`;
+    $("#users-table").innerHTML = filtered.length ? `<div class="user-row header"><span>登录用户</span><span>授权状态</span><span>到期时间</span><span>知乎账号</span><span>最近登录</span><span>操作</span></div>${filtered.map((user) => {
+      const authorization = userAuthorization(user);
+      return `<div class="user-row" data-user-id="${user.id}"><div class="account-name"><strong>${escapeHtml(user.username)}</strong><small>创建于 ${formatDateTime(user.created_at)}</small></div><span class="badge ${authorization.className}">${authorization.label}</span><span class="user-date">${formatDateTime(user.expires_at)}</span><strong>${user.account_count} 个</strong><span class="user-date">${user.last_login_at ? formatDateTime(user.last_login_at) : "尚未登录"}</span><div class="row-actions"><button class="button button-ghost user-edit" type="button">编辑授权</button><button class="button button-ghost user-reset-password" type="button">重置密码</button></div></div>`;
+    }).join("")}` : "";
+    $("#users-empty").hidden = filtered.length !== 0;
+    $("#users-empty h3").textContent = query ? "没有匹配的用户" : "还没有普通用户";
+    $("#users-empty p").textContent = query ? "请更换搜索用户名。" : "添加用户后，对方可以使用自己的账号和数据空间。";
+    $$(".user-edit", $("#users-table")).forEach((button) => button.addEventListener("click", () => openUserDialog(state.users.find((user) => user.id === button.closest(".user-row").dataset.userId))));
+    $$(".user-reset-password", $("#users-table")).forEach((button) => button.addEventListener("click", () => resetManagedUserPassword(button.closest(".user-row").dataset.userId)));
+  }
+
+  async function loadUsers(silent = false) {
+    if (state.user?.role !== "admin") return;
+    try {
+      state.users = await api("/users");
+      renderUsers();
+      if (!silent) toast("用户数据已刷新");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function toLocalDateTimeInput(value) {
+    const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  function openUserDialog(user = null) {
+    $("#user-form").reset();
+    state.editingUserId = user?.id || null;
+    $("#user-dialog-title").textContent = user ? "编辑用户授权" : "添加用户";
+    $("#managed-username").value = user?.username || "";
+    $("#managed-username").disabled = Boolean(user);
+    $("#managed-password-field").hidden = false;
+    $("#managed-password").required = !user;
+    $("#managed-password-label").textContent = user ? "新密码（留空则不修改）" : "初始密码";
+    $("#managed-password").placeholder = user ? "需要重置时填写，至少 12 位" : "至少 12 位";
+    $("#managed-expires").value = user ? (user.expires_at ? toLocalDateTimeInput(user.expires_at) : "") : toLocalDateTimeInput();
+    $("#managed-active").checked = user ? user.is_active : true;
+    $("#user-error").textContent = "";
+    $("#user-dialog").hidden = false;
+    window.setTimeout(() => $(user ? "#managed-expires" : "#managed-username").focus(), 0);
+  }
+
+  function closeUserDialog() {
+    $("#user-dialog").hidden = true;
+    state.editingUserId = null;
+  }
+
+  async function saveManagedUser(event) {
+    event.preventDefault();
+    const submit = $("#user-submit");
+    const expiration = $("#managed-expires").value;
+    const payload = { expires_at: expiration ? new Date(expiration).toISOString() : null, is_active: $("#managed-active").checked };
+    const wasEditing = Boolean(state.editingUserId);
+    if (!wasEditing) {
+      payload.username = $("#managed-username").value.trim();
+      payload.password = $("#managed-password").value;
+    }
+    setBusy(submit, true, "保存中…");
+    $("#user-error").textContent = "";
+    try {
+      if (wasEditing) {
+        const userId = state.editingUserId;
+        await api(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) });
+        if ($("#managed-password").value) await api(`/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ password: $("#managed-password").value }) });
+      }
+      else await api("/users", { method: "POST", body: JSON.stringify(payload) });
+      closeUserDialog();
+      await loadUsers(true);
+      toast(wasEditing ? "用户授权已更新" : "用户已创建");
+    } catch (error) { $("#user-error").textContent = error.message; }
+    finally { setBusy(submit, false); }
+  }
+
+  function resetManagedUserPassword(userId) {
+    const user = state.users.find((item) => item.id === userId);
+    if (!user) return;
+    openUserDialog(user);
+    window.setTimeout(() => $("#managed-password").focus(), 0);
   }
 
   function providerCard(provider) {
@@ -581,17 +685,27 @@
   }
 
   function navigate(page) {
+    if (["users", "settings"].includes(page) && state.user?.role !== "admin") page = "overview";
     state.page = page;
     $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
-    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", keywords: "关键词采集", "article-generate": "文章生成", articles: "文章列表", "article-publish": "自动发布", questions: "问题采集", answers: "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", settings: "系统设置" };
-    const kickers = { overview: "工作台", accounts: "账号与素材", products: "账号与素材", keywords: "关键词中心", "article-generate": "文章运营", articles: "文章运营", "article-publish": "文章运营", questions: "回答运营", answers: "回答运营", "auto-answer": "回答运营", schedules: "任务与系统", logs: "任务与系统", ai: "任务与系统", settings: "任务与系统" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", keywords: "关键词采集", "article-generate": "文章生成", articles: "文章列表", "article-publish": "自动发布", questions: "问题采集", answers: "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号与素材", products: "账号与素材", keywords: "关键词中心", "article-generate": "文章运营", articles: "文章运营", "article-publish": "文章运营", questions: "回答运营", answers: "回答运营", "auto-answer": "回答运营", schedules: "任务与系统", logs: "任务与系统", ai: "任务与系统", users: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
     if (page === "ai" && !state.providers.length) loadProviders(true);
     if (page === "keywords") loadKeywordData(true);
     if (page === "products") loadProducts(true);
+    if (page === "users") loadUsers(true);
+  }
+
+  function refreshCurrentPage() {
+    if (state.page === "products") return loadProducts();
+    if (state.page === "keywords") return loadKeywordData();
+    if (state.page === "ai") return loadProviders();
+    if (state.page === "users") return loadUsers();
+    return loadAccounts();
   }
 
   async function login(event) {
@@ -621,9 +735,16 @@
   async function boot() {
     $("#login-form").addEventListener("submit", login);
     $("#logout-button").addEventListener("click", () => logout());
-    $("#refresh-button").addEventListener("click", () => loadAccounts());
+    $("#refresh-button").addEventListener("click", refreshCurrentPage);
     $("#account-form").addEventListener("submit", createAccount);
     $("#account-search").addEventListener("input", renderAccounts);
+    $("#user-search").addEventListener("input", renderUsers);
+    $("#user-add").addEventListener("click", () => openUserDialog());
+    $("#user-empty-add").addEventListener("click", () => openUserDialog());
+    $("#user-form").addEventListener("submit", saveManagedUser);
+    $("#user-dialog-close").addEventListener("click", closeUserDialog);
+    $("#user-dialog-cancel").addEventListener("click", closeUserDialog);
+    $("#user-dialog").addEventListener("click", (event) => { if (event.target.id === "user-dialog") closeUserDialog(); });
     $("#product-account").addEventListener("change", () => { $("#product-search").value = ""; loadProducts(true); });
     $("#product-search").addEventListener("input", renderProducts);
     $("#product-add").addEventListener("click", () => openProductDialog());
@@ -655,7 +776,7 @@
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     $$('[data-page-link]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageLink)));
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); } });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); } });
 
     try {
       const version = await api("/version");

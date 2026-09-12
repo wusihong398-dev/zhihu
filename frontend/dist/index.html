@@ -7,7 +7,7 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.6.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.7.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -70,7 +70,8 @@
         <button class="nav-item" data-page="schedules"><span class="nav-icon">◷</span>定时计划</button>
         <button class="nav-item" data-page="logs"><span class="nav-icon">☷</span>运行日志</button>
         <button class="nav-item" data-page="ai"><span class="nav-icon">◇</span>AI 配置</button>
-        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span>系统设置</button>
+        <button class="nav-item admin-only" data-page="users"><span class="nav-icon">♙</span>用户管理</button>
+        <button class="nav-item admin-only" data-page="settings"><span class="nav-icon">⚙</span>系统设置</button>
       </nav>
       <div class="sidebar-status">
         <span class="status-dot"></span>
@@ -84,7 +85,7 @@
         <div><p id="page-kicker">工作台</p><h2 id="page-title">运行概览</h2></div>
         <div class="topbar-actions">
           <button id="refresh-button" class="icon-button" aria-label="刷新数据">↻</button>
-          <div class="user-menu"><span id="user-avatar">A</span><div><strong id="user-name">管理员</strong><small>系统管理员</small></div></div>
+          <div class="user-menu"><span id="user-avatar">A</span><div><strong id="user-name">管理员</strong><small id="user-role-label">系统管理员</small></div></div>
           <button id="logout-button" class="button button-ghost">退出</button>
         </div>
       </header>
@@ -106,7 +107,7 @@
           <div id="overview-empty" class="empty-state" hidden><span>◎</span><h3>还没有知乎账号</h3><p>添加第一个账号后，即可设置每天的文章和回答数量。</p><button class="button button-primary" data-open-account>添加账号</button></div>
         </section>
         <section class="panel module-overview-panel">
-          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">14 个模块</span></div>
+          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">15 个模块</span></div>
           <div class="module-shortcuts">
             <button data-page-link="products"><span>▣</span><strong>推广商品</strong><small>商品资料与推广要求</small></button>
             <button data-page-link="keywords"><span>⌕</span><strong>关键词中心</strong><small>采集、文件夹与筛选</small></button>
@@ -249,9 +250,24 @@
         <section class="security-note"><span>◇</span><div><strong>API Key 加密保存</strong><p>密钥使用服务器应用密钥加密，网页和查询接口只显示掩码，不会返回完整内容。</p></div></section>
       </div>
 
-      <div id="settings-page" class="page">
+      <div id="settings-page" class="page admin-only">
         <section class="page-heading"><div><span class="eyebrow">全局运行参数</span><h1>系统设置</h1><p>配置默认时区、任务并发、内容过滤、通知、安全和数据备份策略。</p></div></section>
         <section class="panel module-placeholder"><span class="module-icon">⚙</span><span class="badge off">功能待填充</span><h2>系统与安全配置</h2><p>计划包含内容最小字数、违禁词、失败通知、管理员密码、数据备份、代理和浏览器运行参数。</p><div class="feature-tags"><span>内容过滤</span><span>违禁词</span><span>失败通知</span><span>数据备份</span><span>安全设置</span></div></section>
+      </div>
+
+      <div id="users-page" class="page admin-only">
+        <section class="page-heading"><div><span class="eyebrow">多用户授权与隔离</span><h1>用户管理</h1><p>为客户创建独立登录账号并设置使用期限。每个用户只能访问自己的知乎账号、关键词、商品和 AI 配置。</p></div><button id="user-add" class="button button-primary">＋ 添加用户</button></section>
+        <section class="metrics user-metrics" aria-label="用户指标">
+          <article class="metric-card accent-blue"><span>普通用户</span><strong id="metric-users">0</strong><small>不包含系统管理员</small></article>
+          <article class="metric-card accent-green"><span>授权有效</span><strong id="metric-users-active">0</strong><small>启用且未到期</small></article>
+          <article class="metric-card accent-violet"><span>即将到期</span><strong id="metric-users-expiring">0</strong><small>7 天内到期</small></article>
+          <article class="metric-card accent-cyan"><span>知乎账号</span><strong id="metric-user-accounts">0</strong><small>普通用户账号合计</small></article>
+        </section>
+        <section class="panel user-panel">
+          <div class="table-toolbar"><label class="search-box">⌕<input id="user-search" placeholder="搜索用户名"></label><span id="user-count">共 0 个用户</span></div>
+          <div id="users-table" class="users-table"></div>
+          <div id="users-empty" class="empty-state"><span>♙</span><h3>还没有普通用户</h3><p>添加用户后，对方可以使用自己的账号和数据空间。</p><button id="user-empty-add" class="button button-primary">添加用户</button></div>
+        </section>
       </div>
     </section>
   </div>
@@ -304,6 +320,26 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.6.0" defer></script>
+  <div id="user-dialog" class="dialog-backdrop" hidden>
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="user-dialog-title">
+      <div class="dialog-head"><div><span class="eyebrow">系统使用授权</span><h2 id="user-dialog-title">添加用户</h2></div><button id="user-dialog-close" class="icon-button" aria-label="关闭">×</button></div>
+      <form id="user-form">
+        <label for="managed-username">登录用户名</label>
+        <input id="managed-username" minlength="3" maxlength="100" pattern="[A-Za-z0-9_.-]+" placeholder="字母、数字、点、横线或下划线" required>
+        <div id="managed-password-field">
+          <label id="managed-password-label" for="managed-password">初始密码</label>
+          <input id="managed-password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" placeholder="至少 12 位">
+        </div>
+        <label for="managed-expires">授权到期时间</label>
+        <input id="managed-expires" type="datetime-local">
+        <p class="field-help">到期时间留空表示长期有效；到期后自动禁止登录，续期后可继续使用原有数据。</p>
+        <label class="product-enabled"><input id="managed-active" type="checkbox" checked> 启用此用户</label>
+        <p id="user-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="user-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="user-submit" class="button button-primary" type="submit">保存用户</button></div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/assets/app.js?v=0.7.0" defer></script>
 </body>
 </html>

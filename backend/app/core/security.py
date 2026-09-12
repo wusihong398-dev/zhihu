@@ -37,7 +37,16 @@ def create_access_token(user: User) -> tuple[str, int]:
     return token, expires_in
 
 
-async def require_admin(
+def user_is_expired(user: User, now: datetime | None = None) -> bool:
+    if user.expires_at is None:
+        return False
+    expires_at = user.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= (now or datetime.now(UTC))
+
+
+async def require_active_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -59,7 +68,12 @@ async def require_admin(
         raise unauthorized
 
     user = await db.get(User, user_id)
-    if user is None or not user.is_active or user.role != UserRole.admin:
+    if user is None or not user.is_active or user_is_expired(user):
         raise unauthorized
     return user
 
+
+async def require_admin(user: User = Depends(require_active_user)) -> User:
+    if user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="需要系统管理员权限")
+    return user

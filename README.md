@@ -5,6 +5,7 @@
 ## 已确定的核心要求
 
 - Ubuntu 24.04 + Docker Compose + Nginx + HTTPS。
+- 支持系统管理员创建多个授权用户、设置到期时间和停用状态；每个用户的数据空间相互隔离。
 - 每个知乎账号独立保存 Cookie、浏览器 Profile、关键词、文章、回答、商品资料、任务、配额和日志。
 - 百度采集页面底部“相关搜索”，谷歌采集“用户还搜索了”。同层候选词按长度从短到长扩展，数量不足时逐层继续。
 - 支持 ChatGPT / OpenAI、DeepSeek、火山方舟；官方平台预置 URL 和模型，用户只填写 API Key。
@@ -13,7 +14,7 @@
 
 ## 当前版本
 
-`v0.6.0`：推广商品库正式可用。商品按知乎账号独立保存，支持新增、编辑、删除、搜索、启用/停用，并可维护商品分类、简介、核心卖点、目标人群、推广链接、内容要求和禁用表述。
+`v0.7.0`：升级为多系统用户版本。管理员可新增用户、设置使用期限、启用/停用及重置密码；普通用户只能访问自己的知乎账号、关键词、推广商品和 AI 平台配置。到期后自动禁止登录，续期后原有数据继续保留。
 
 ## 快速启动
 
@@ -35,6 +36,9 @@ bash scripts/bootstrap_server.sh
 - `GET /api/accounts`：账号列表。
 - `GET /api/accounts/{account_id}`：账号详情。
 - `PATCH /api/accounts/{account_id}`：修改备注、配额、时区和启用状态。
+- `GET/POST /api/users`：管理员查询或新增授权用户。
+- `PATCH /api/users/{user_id}`：管理员调整用户到期时间和启用状态。
+- `POST /api/users/{user_id}/reset-password`：管理员重置普通用户密码。
 - `GET /api/ai/providers`：获取预置 AI 平台与已保存配置（不返回 API Key 明文）。
 - `PUT /api/ai/providers/{provider}`：加密保存 API Key 和模型。
 - `POST /api/ai/providers/{provider}/test`：实际请求平台测试配置。
@@ -48,7 +52,7 @@ bash scripts/bootstrap_server.sh
 - `GET/POST /api/accounts/{account_id}/products`：查询或新增该账号的推广商品。
 - `GET/PATCH/DELETE /api/accounts/{account_id}/products/{product_id}`：读取、编辑或删除推广商品。
 
-除健康检查、版本和登录外，业务接口均要求管理员 Bearer Token。
+除健康检查、版本和登录外，业务接口均要求 Bearer Token。普通业务接口允许有效期内的授权用户访问，但会按用户身份强制过滤数据；用户管理接口只允许系统管理员访问。升级启动时会自动增加多租户字段和索引，保留现有管理员、知乎账号、关键词、商品及 AI 配置。
 
 首次启动后，在服务器交互式创建管理员：
 

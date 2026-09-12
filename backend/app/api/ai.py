@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_admin
+from app.core.security import require_active_user
 from app.db.session import get_db
 from app.models.ai_provider import AIProviderConfig
+from app.models.user import User, UserRole
+from app.models.user_ai_provider import UserAIProviderConfig
 from app.schemas.ai_provider import (
     AIProviderRead,
     AIProviderTestRequest,
@@ -19,17 +21,33 @@ from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 router = APIRouter(
     prefix="/ai/providers",
     tags=["ai providers"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_active_user)],
 )
 
 
-async def _get_configs(db: AsyncSession) -> dict[str, AIProviderConfig]:
-    result = await db.execute(select(AIProviderConfig))
+async def _get_configs(db: AsyncSession, user: User) -> dict[str, UserAIProviderConfig]:
+    result = await db.execute(
+        select(UserAIProviderConfig).where(UserAIProviderConfig.user_id == user.id)
+    )
     configs = {item.provider: item for item in result.scalars()}
+    legacy: dict[str, AIProviderConfig] = {}
+    if not configs and user.role == UserRole.admin:
+        legacy_result = await db.execute(select(AIProviderConfig))
+        legacy = {item.provider: item for item in legacy_result.scalars()}
     changed = False
     for provider, definition in PROVIDERS.items():
         if provider not in configs:
-            config = AIProviderConfig(provider=provider, model=definition.models[0])
+            old = legacy.get(provider)
+            config = UserAIProviderConfig(
+                user_id=user.id,
+                provider=provider,
+                model=old.model if old else definition.models[0],
+                api_key_encrypted=old.api_key_encrypted if old else None,
+                enabled=old.enabled if old else False,
+                last_test_ok=old.last_test_ok if old else None,
+                last_test_message=old.last_test_message if old else None,
+                last_tested_at=old.last_tested_at if old else None,
+            )
             db.add(config)
             configs[provider] = config
             changed = True
@@ -40,7 +58,9 @@ async def _get_configs(db: AsyncSession) -> dict[str, AIProviderConfig]:
     return configs
 
 
-def _to_read(config: AIProviderConfig, definition: ProviderDefinition) -> AIProviderRead:
+def _to_read(
+    config: UserAIProviderConfig, definition: ProviderDefinition
+) -> AIProviderRead:
     masked_key = None
     if config.api_key_encrypted:
         try:
@@ -63,8 +83,11 @@ def _to_read(config: AIProviderConfig, definition: ProviderDefinition) -> AIProv
 
 
 @router.get("", response_model=list[AIProviderRead])
-async def list_providers(db: AsyncSession = Depends(get_db)) -> list[AIProviderRead]:
-    configs = await _get_configs(db)
+async def list_providers(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> list[AIProviderRead]:
+    configs = await _get_configs(db, user)
     return [_to_read(configs[key], definition) for key, definition in PROVIDERS.items()]
 
 
@@ -73,11 +96,12 @@ async def update_provider(
     provider: str,
     payload: AIProviderUpdate,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
 ) -> AIProviderRead:
     definition = PROVIDERS.get(provider)
     if definition is None:
         raise HTTPException(status_code=404, detail="AI 平台不存在")
-    configs = await _get_configs(db)
+    configs = await _get_configs(db, user)
     config = configs[provider]
     config.model = payload.model.strip()
     config.enabled = payload.enabled
@@ -96,11 +120,12 @@ async def check_provider(
     provider: str,
     payload: AIProviderTestRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
 ) -> AIProviderTestResult:
     definition = PROVIDERS.get(provider)
     if definition is None:
         raise HTTPException(status_code=404, detail="AI 平台不存在")
-    configs = await _get_configs(db)
+    configs = await _get_configs(db, user)
     config = configs[provider]
     api_key = payload.api_key.strip() if payload.api_key else ""
     if not api_key and config.api_key_encrypted:

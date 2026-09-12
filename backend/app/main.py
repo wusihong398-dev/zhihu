@@ -9,6 +9,7 @@ from app.api import (
     health_router,
     keywords_router,
     products_router,
+    users_router,
 )
 from app.core.config import settings
 from app.db.session import create_schema, engine
@@ -27,7 +28,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
@@ -38,3 +39,4 @@ app.include_router(accounts_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(keywords_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
+app.include_router(users_router, prefix="/api")

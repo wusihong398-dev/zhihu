@@ -28,6 +28,7 @@ class AccountRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    owner_user_id: uuid.UUID | None
     display_name: str
     remark: str
     status: AccountStatus
@@ -37,4 +38,3 @@ class AccountRead(BaseModel):
     timezone: str
     created_at: datetime
     updated_at: datetime
-

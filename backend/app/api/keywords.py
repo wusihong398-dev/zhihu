@@ -4,7 +4,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_admin
 from app.db.session import get_db
 from app.models.account import ZhihuAccount
 from app.models.keyword import AccountKeyword
@@ -27,11 +26,12 @@ from app.schemas.keyword import (
     KeywordRead,
 )
 from app.services.keyword_collector import run_keyword_job
+from app.services.access_control import require_account_access
 
 router = APIRouter(
     prefix="/accounts/{account_id}",
     tags=["keywords"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_account_access)],
 )
 
 

@@ -20,6 +20,7 @@ class UserRead(BaseModel):
     is_active: bool
     created_at: datetime
     last_login_at: datetime | None
+    expires_at: datetime | None
 
 
 class LoginResponse(BaseModel):
@@ -27,4 +28,3 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserRead
-

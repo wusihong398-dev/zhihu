@@ -1,11 +1,18 @@
 from fastapi.testclient import TestClient
 
-from app.core.security import require_admin
+import uuid
+from types import SimpleNamespace
+
+from app.core.security import require_active_user
 from app.main import app
+from app.models.user import UserRole
+
+
+TEST_ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
 
 
 def test_product_crud_is_account_scoped() -> None:
-    app.dependency_overrides[require_admin] = lambda: object()
+    app.dependency_overrides[require_active_user] = lambda: TEST_ADMIN
     try:
         with TestClient(app) as client:
             first = client.post(
@@ -62,11 +69,11 @@ def test_product_crud_is_account_scoped() -> None:
             assert deleted.status_code == 204
             assert client.get(f"/api/accounts/{first_id}/products").json()["total"] == 0
     finally:
-        app.dependency_overrides.pop(require_admin, None)
+        app.dependency_overrides.pop(require_active_user, None)
 
 
 def test_product_rejects_non_http_promotion_url() -> None:
-    app.dependency_overrides[require_admin] = lambda: object()
+    app.dependency_overrides[require_active_user] = lambda: TEST_ADMIN
     try:
         with TestClient(app) as client:
             account = client.post(
@@ -79,4 +86,4 @@ def test_product_rejects_non_http_promotion_url() -> None:
             )
             assert response.status_code == 422
     finally:
-        app.dependency_overrides.pop(require_admin, None)
+        app.dependency_overrides.pop(require_active_user, None)

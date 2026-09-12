@@ -13,6 +13,7 @@ from app.models.keyword_job import (
 )
 from app.models.product import PromotedProduct
 from app.models.user import User, UserRole
+from app.models.user_ai_provider import UserAIProviderConfig
 
 __all__ = [
     "AccountKeyword",
@@ -27,6 +28,7 @@ __all__ = [
     "KeywordSource",
     "PromotedProduct",
     "User",
+    "UserAIProviderConfig",
     "UserRole",
     "ZhihuAccount",
 ]

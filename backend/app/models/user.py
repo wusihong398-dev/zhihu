@@ -11,6 +11,7 @@ from app.db.session import Base
 
 class UserRole(str, enum.Enum):
     admin = "admin"
+    user = "user"
 
 
 class User(Base):
@@ -31,4 +32,6 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
