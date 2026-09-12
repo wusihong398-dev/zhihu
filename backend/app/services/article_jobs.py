@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import re
 import uuid
 from datetime import UTC, datetime
@@ -17,6 +18,7 @@ from app.models.article_job import (
 )
 from app.models.keyword import AccountKeyword
 from app.models.product import PromotedProduct
+from app.models.system_setting import SystemSetting
 from app.models.user_ai_provider import UserAIProviderConfig
 from app.services.ai_providers import (
     AIProviderError,
@@ -90,6 +92,15 @@ async def _wait_for_permission(job_id: uuid.UUID) -> ArticleJobStatus:
             await asyncio.sleep(0.5)
             continue
         return current
+
+
+async def _publish_delay() -> None:
+    async with SessionLocal() as db:
+        settings = await db.get(SystemSetting, 1)
+        minimum = settings.publish_interval_min if settings else 5
+        maximum = settings.publish_interval_max if settings else 12
+    if maximum > 0:
+        await asyncio.sleep(random.uniform(minimum, maximum))
 
 
 async def _set_failed(job_id: uuid.UUID, message: str) -> None:
@@ -384,6 +395,9 @@ async def _run_publish_job(job_id: uuid.UUID) -> None:
                 job.success_count += 1
             job.completed_count += 1
             await db.commit()
+
+        if index + 1 < len(article_ids) and await _wait_for_permission(job_id) not in _terminal_statuses:
+            await _publish_delay()
 
     async with SessionLocal() as db:
         job = await db.get(ArticleJob, job_id)

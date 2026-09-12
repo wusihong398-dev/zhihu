@@ -59,5 +59,7 @@ jobs:
         run: node --check ../frontend/dist/assets/app.js
       - name: Check Q&A frontend
         run: node --check ../frontend/dist/assets/qa.js
+      - name: Check operations frontend
+        run: node --check ../frontend/dist/assets/operations.js
       - name: Run tests
         run: pytest -q

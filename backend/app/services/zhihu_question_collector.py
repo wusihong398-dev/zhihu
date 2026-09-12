@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.models.account import ZhihuAccount
 from app.services.account_storage import account_storage_path
 from app.services.browser_lock import get_account_browser_lock
+from app.services.system_settings import browser_timeout_ms
 from app.services.zhihu_login import has_zhihu_auth_cookie
 
 
@@ -82,9 +83,11 @@ def questions_from_search_payload(payload: Any, keyword: str) -> list[ZhihuQuest
     return list(found.values())
 
 
-async def _collect_from_page(page: Any, keyword: str) -> list[ZhihuQuestionCandidate]:
+async def _collect_from_page(
+    page: Any, keyword: str, timeout_ms: int = 30000
+) -> list[ZhihuQuestionCandidate]:
     url = f"https://www.zhihu.com/search?type=content&q={quote(keyword)}"
-    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
     await page.wait_for_timeout(2200)
     for _ in range(3):
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -132,6 +135,8 @@ async def collect_zhihu_questions(
     try:
         from playwright.async_api import async_playwright
 
+        timeout_ms = await browser_timeout_ms()
+
         playwright = await async_playwright().start()
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(root / "browser-profile"),
@@ -145,12 +150,14 @@ async def collect_zhihu_questions(
         if not has_zhihu_auth_cookie(await context.cookies()):
             raise ZhihuQuestionLoginRequired("知乎登录已失效，请先重新扫码登录")
         page = context.pages[0] if context.pages else await context.new_page()
+        page.set_default_timeout(timeout_ms)
+        page.set_default_navigation_timeout(timeout_ms)
         found: dict[str, ZhihuQuestionCandidate] = {}
         for keyword in keywords:
             try:
                 response = await context.request.get(
                     f"https://www.zhihu.com/api/v4/search_v3?t=general&q={quote(keyword)}&offset=0&limit=20",
-                    timeout=20000,
+                    timeout=timeout_ms,
                 )
                 if response.status == 200:
                     for item in questions_from_search_payload(await response.json(), keyword):
@@ -158,7 +165,7 @@ async def collect_zhihu_questions(
             except Exception:
                 pass
             if len(found) < target_count:
-                for item in await _collect_from_page(page, keyword):
+                for item in await _collect_from_page(page, keyword, timeout_ms):
                     found.setdefault(item.question_id, item)
             if len(found) >= target_count:
                 break

@@ -7,6 +7,7 @@ from app.models.account import ZhihuAccount
 from app.models.answer import ZhihuAnswer
 from app.services.account_storage import account_storage_path
 from app.services.browser_lock import get_account_browser_lock
+from app.services.system_settings import browser_timeout_ms
 from app.services.zhihu_login import has_zhihu_auth_cookie
 
 
@@ -82,6 +83,8 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
     try:
         from playwright.async_api import async_playwright
 
+        timeout_ms = await browser_timeout_ms()
+
         playwright = await async_playwright().start()
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(root / "browser-profile"),
@@ -95,12 +98,14 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
         if not has_zhihu_auth_cookie(await context.cookies()):
             raise ZhihuAnswerLoginRequired("知乎登录已失效，请先重新扫码登录")
         page = context.pages[0] if context.pages else await context.new_page()
+        page.set_default_timeout(timeout_ms)
+        page.set_default_navigation_timeout(timeout_ms)
         responses: list[Any] = []
         page.on("response", lambda response: responses.append(response))
         response = await page.goto(
             f"https://www.zhihu.com/question/{question_id}",
             wait_until="domcontentloaded",
-            timeout=30000,
+            timeout=timeout_ms,
         )
         await page.wait_for_timeout(2200)
         if response is not None and response.status == 404:

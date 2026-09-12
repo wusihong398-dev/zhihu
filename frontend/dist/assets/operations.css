@@ -1,0 +1,35 @@
+.operation-editor { margin-bottom: 18px; }
+.operation-form { padding: 22px; }
+.operation-form .field-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.operation-form label { display: block; color: #b8cae4; font-size: .78rem; margin-bottom: 7px; }
+.operation-form input, .operation-form select, .operation-form textarea { width: 100%; }
+.weekday-picker { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 20px 0; }
+.weekday-picker > span { color: #b8cae4; font-size: .78rem; margin-right: 8px; }
+.weekday-picker label { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 7px 10px; border: 1px solid #223b5e; border-radius: 9px; }
+.weekday-picker input { width: auto; }
+.schedule-dynamic { padding: 18px; border: 1px solid #203a5d; border-radius: 12px; background: #091a31; }
+.schedule-dynamic .field-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.schedule-dynamic textarea { min-height: 92px; resize: vertical; }
+.toggle-row { display: inline-flex !important; align-items: center; gap: 8px; margin-top: 18px; }
+.toggle-row input { width: auto; }
+.operation-table { display: grid; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid #1c3454; }
+.operation-table > span { min-width: 0; }
+.operation-schedule-header, .operation-schedule-row { grid-template-columns: minmax(210px, 1.5fr) 130px 120px 120px 180px minmax(260px, auto); }
+.operation-log-header, .operation-log-row { grid-template-columns: minmax(230px, 1.5fr) 130px 100px 70px 110px minmax(220px, 1fr); }
+.operation-table strong { display: block; color: #eef6ff; line-height: 1.45; }
+.operation-table small { display: block; color: #7f97b9; margin-top: 5px; line-height: 1.45; }
+.operation-actions { display: flex; gap: 7px; justify-content: flex-end; flex-wrap: wrap; }
+.operation-log-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 220px 150px auto; gap: 12px; padding: 18px 20px; }
+.operation-message { white-space: normal; overflow-wrap: anywhere; color: #91a8c8; }
+.settings-panel { max-width: 1120px; }
+.settings-panel .security-note { margin: 22px 0; }
+@media (max-width: 1250px) {
+  .operation-form .field-grid, .schedule-dynamic .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operation-schedule-header, .operation-log-header { display: none; }
+  .operation-schedule-row, .operation-log-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operation-actions { justify-content: flex-start; }
+  .operation-log-toolbar { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .operation-form .field-grid, .schedule-dynamic .field-grid, .operation-schedule-row, .operation-log-row, .operation-log-toolbar { grid-template-columns: 1fr; }
+}

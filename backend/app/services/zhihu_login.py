@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.models.account import AccountStatus, ZhihuAccount
 from app.services.account_storage import account_storage_path
 from app.services.browser_lock import get_account_browser_lock
+from app.services.system_settings import browser_timeout_ms
 
 
 LOGIN_SESSION_TTL = timedelta(minutes=10)
@@ -144,6 +145,8 @@ async def start_login_session(account: ZhihuAccount) -> ZhihuLoginSession:
     try:
         from playwright.async_api import async_playwright
 
+        timeout_ms = await browser_timeout_ms()
+
         session.playwright = await async_playwright().start()
         session.context = await session.playwright.chromium.launch_persistent_context(
             user_data_dir=str(root / "browser-profile"),
@@ -163,10 +166,12 @@ async def start_login_session(account: ZhihuAccount) -> ZhihuLoginSession:
             if session.context.pages
             else await session.context.new_page()
         )
+        session.page.set_default_timeout(timeout_ms)
+        session.page.set_default_navigation_timeout(timeout_ms)
         await session.page.goto(
             "https://www.zhihu.com/signin?next=%2F",
             wait_until="domcontentloaded",
-            timeout=30000,
+            timeout=timeout_ms,
         )
         await _select_qr_login(session.page)
         session.status = await _browser_login_state(session)

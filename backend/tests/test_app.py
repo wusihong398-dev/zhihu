@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.11.0"
+        assert version.json()["version"] == "0.12.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -70,3 +70,16 @@ def test_qa_pages_are_functional_modules() -> None:
     assert "/questions/collect" in script
     assert "/answer-jobs/generate" in script
     assert "/answer-jobs/publish/start" in script
+
+
+def test_operations_pages_are_functional_modules() -> None:
+    index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "frontend/dist/assets/operations.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="schedule-form"' in index
+    assert 'id="logs-list"' in index
+    assert 'id="system-settings-form"' in index
+    assert "/schedules" in script
+    assert "/operation-logs" in script
+    assert "/system-settings" in script

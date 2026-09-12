@@ -7,10 +7,11 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.11.0">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.11.0">
-  <link rel="stylesheet" href="/assets/login.css?v=0.11.0">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.11.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.12.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.12.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.12.0">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.12.0">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.12.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -285,13 +286,14 @@
       </div>
 
       <div id="schedules-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">自动化时间管理</span><h1>定时计划</h1><p>统一设置关键词采集、文章生成、文章发布、问题采集和自动回答的运行时间。</p></div></section>
-        <section class="panel module-placeholder"><span class="module-icon">◷</span><span class="badge off">功能待填充</span><h2>任务日历与队列</h2><p>计划包含按账号独立开关、每日运行时间、任务先后顺序、并发限制、补跑和节假日暂停。</p><div class="feature-tags"><span>任务日历</span><span>账号时区</span><span>执行顺序</span><span>并发限制</span><span>失败补跑</span></div></section>
+        <section class="page-heading"><div><span class="eyebrow">自动化时间管理</span><h1>定时计划</h1><p>每个计划绑定一个系统用户和知乎账号，按账号时区独立执行，失败不会影响其他账号。</p></div><button id="schedule-new" class="button button-primary" type="button">＋ 新建计划</button></section>
+        <section id="schedule-editor" class="panel operation-editor" hidden><div class="panel-head"><div><span class="eyebrow">计划配置</span><h3 id="schedule-editor-title">新建定时计划</h3></div><button id="schedule-editor-close" class="icon-button" type="button">×</button></div><form id="schedule-form" class="operation-form"><input id="schedule-id" type="hidden"><div class="field-grid"><div><label>计划名称</label><input id="schedule-name" maxlength="120" required></div><div><label>知乎账号</label><select id="schedule-account" required></select></div><div><label>任务类型</label><select id="schedule-type"><option value="keyword_collect">关键词采集</option><option value="article_generate">文章生成</option><option value="article_publish">文章发布</option><option value="question_collect">问题采集</option><option value="answer_generate">回答生成</option><option value="answer_publish">回答发布</option></select></div><div><label>每日执行时间</label><input id="schedule-time" type="time" value="09:00" required></div></div><div class="weekday-picker"><span>执行星期</span><label><input type="checkbox" value="0" checked>一</label><label><input type="checkbox" value="1" checked>二</label><label><input type="checkbox" value="2" checked>三</label><label><input type="checkbox" value="3" checked>四</label><label><input type="checkbox" value="4" checked>五</label><label><input type="checkbox" value="5" checked>六</label><label><input type="checkbox" value="6" checked>日</label></div><div id="schedule-dynamic" class="schedule-dynamic"></div><label class="toggle-row"><input id="schedule-enabled" type="checkbox" checked>启用计划</label><p id="schedule-error" class="form-error"></p><div class="dialog-actions"><button id="schedule-cancel" class="button button-ghost" type="button">取消</button><button id="schedule-submit" class="button button-primary" type="submit">保存计划</button></div></form></section>
+        <section class="panel"><div class="content-toolbar"><select id="schedule-filter-account"><option value="">全部知乎账号</option></select><span id="schedule-count">共 0 个计划</span></div><div class="operation-table operation-schedule-header"><span>计划 / 账号</span><span>任务</span><span>执行时间</span><span>状态</span><span>下次执行</span><span>操作</span></div><div id="schedule-list"></div><div id="schedule-empty" class="empty-state"><span>◷</span><h3>还没有定时计划</h3><p>新建计划后，服务器会在后台按账号时区自动执行。</p></div></section>
       </div>
 
       <div id="logs-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">全流程可追踪</span><h1>运行日志</h1><p>按账号、任务类型和状态查询采集、生成、发布、回答过程及失败原因。</p></div></section>
-        <section class="panel module-placeholder"><span class="module-icon">☷</span><span class="badge off">功能待填充</span><h2>任务与审计日志</h2><p>计划包含实时运行日志、成功/失败数量、耗时、错误详情、重试记录和数据导出。</p><div class="feature-tags"><span>实时日志</span><span>失败原因</span><span>任务耗时</span><span>重试记录</span><span>日志导出</span></div></section>
+        <section class="page-heading"><div><span class="eyebrow">全流程可追踪</span><h1>运行日志</h1><p>关键词、文章、问答和定时计划统一记录，保留任务数量、状态和完整失败原因。</p></div><button id="logs-export" class="button button-ghost" type="button">导出 CSV</button></section>
+        <section class="panel"><div class="operation-log-toolbar"><label class="search-box">⌕<input id="logs-search" placeholder="搜索任务或失败原因"></label><select id="logs-account"><option value="">全部知乎账号</option></select><select id="logs-category"><option value="">全部任务</option><option value="keyword">关键词</option><option value="article">文章</option><option value="answer">回答</option><option value="schedule">定时计划</option></select><button id="logs-refresh" class="button button-ghost" type="button">刷新</button></div><div class="operation-table operation-log-header"><span>时间 / 任务</span><span>知乎账号</span><span>状态</span><span>总数</span><span>成功 / 失败</span><span>说明</span></div><div id="logs-list"></div><div id="logs-empty" class="empty-state"><span>☷</span><h3>暂无运行记录</h3><p>执行采集、生成或发布任务后会在这里显示。</p></div><div id="logs-pagination" class="pagination" hidden><button id="logs-prev" class="button button-ghost">上一页</button><span id="logs-page-info"></span><button id="logs-next" class="button button-ghost">下一页</button></div></section>
       </div>
 
       <div id="ai-page" class="page">
@@ -301,8 +303,8 @@
       </div>
 
       <div id="settings-page" class="page admin-only">
-        <section class="page-heading"><div><span class="eyebrow">全局运行参数</span><h1>系统设置</h1><p>配置默认时区、任务并发、内容过滤、通知、安全和数据备份策略。</p></div></section>
-        <section class="panel module-placeholder"><span class="module-icon">⚙</span><span class="badge off">功能待填充</span><h2>系统与安全配置</h2><p>计划包含内容最小字数、违禁词、失败通知、管理员密码、数据备份、代理和浏览器运行参数。</p><div class="feature-tags"><span>内容过滤</span><span>违禁词</span><span>失败通知</span><span>数据备份</span><span>安全设置</span></div></section>
+        <section class="page-heading"><div><span class="eyebrow">全局运行参数</span><h1>系统设置</h1><p>管理员统一控制日志保留、批量发布随机间隔、浏览器超时和默认时区。</p></div></section>
+        <section class="panel settings-panel"><form id="system-settings-form" class="operation-form"><div class="field-grid"><div><label>日志保留天数</label><input id="setting-log-days" type="number" min="7" max="3650" required></div><div><label>默认时区</label><input id="setting-timezone" maxlength="64" placeholder="Asia/Shanghai" required></div><div><label>发布最小间隔（秒）</label><input id="setting-interval-min" type="number" min="0" max="3600" required></div><div><label>发布最大间隔（秒）</label><input id="setting-interval-max" type="number" min="0" max="3600" required></div><div><label>浏览器操作超时（秒）</label><input id="setting-browser-timeout" type="number" min="10" max="180" required></div></div><div class="security-note"><span>◇</span><div><strong>账号数据隔离不受全局设置影响</strong><p>这些参数只控制任务节奏和日志展示；知乎登录资料、关键词、商品、文章、回答与用户 API Key 仍按用户和账号独立保存。</p></div></div><p id="settings-error" class="form-error"></p><button id="settings-submit" class="button button-primary" type="submit">保存系统设置</button></form></section>
       </div>
 
       <div id="users-page" class="page admin-only">
@@ -422,7 +424,8 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.11.0" defer></script>
-  <script src="/assets/qa.js?v=0.11.0" defer></script>
+  <script src="/assets/app.js?v=0.12.0" defer></script>
+  <script src="/assets/qa.js?v=0.12.0" defer></script>
+  <script src="/assets/operations.js?v=0.12.0" defer></script>
 </body>
 </html>

@@ -12,6 +12,7 @@ from app.models.account import ZhihuAccount
 from app.models.article import Article
 from app.services.account_storage import account_storage_path
 from app.services.browser_lock import get_account_browser_lock
+from app.services.system_settings import browser_timeout_ms
 from app.services.zhihu_login import has_zhihu_auth_cookie
 
 
@@ -544,6 +545,8 @@ async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> s
     try:
         from playwright.async_api import async_playwright
 
+        timeout_ms = await browser_timeout_ms()
+
         playwright = await async_playwright().start()
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(root / "browser-profile"),
@@ -558,10 +561,12 @@ async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> s
             raise ZhihuLoginRequired("知乎登录已失效，请先重新扫码登录")
 
         page = context.pages[0] if context.pages else await context.new_page()
+        page.set_default_timeout(timeout_ms)
+        page.set_default_navigation_timeout(timeout_ms)
         await page.goto(
             "https://zhuanlan.zhihu.com/write",
             wait_until="domcontentloaded",
-            timeout=30000,
+            timeout=timeout_ms,
         )
         await page.wait_for_timeout(1800)
         if "signin" in page.url.lower() or not has_zhihu_auth_cookie(

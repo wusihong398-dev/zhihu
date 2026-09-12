@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import re
 import uuid
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
 from app.models.product import PromotedProduct
 from app.models.question import QuestionStatus, ZhihuQuestion
+from app.models.system_setting import SystemSetting
 from app.models.user_ai_provider import UserAIProviderConfig
 from app.services.ai_providers import AIProviderError, PROVIDERS, generate_answer_content
 from app.services.secret_box import decrypt_secret
@@ -100,6 +102,15 @@ async def _finish(job_id: uuid.UUID) -> None:
             if job.failed_count:
                 job.error_message = f"任务完成，其中 {job.failed_count} 个回答失败，请查看原因"
             await db.commit()
+
+
+async def _publish_delay() -> None:
+    async with SessionLocal() as db:
+        settings = await db.get(SystemSetting, 1)
+        minimum = settings.publish_interval_min if settings else 5
+        maximum = settings.publish_interval_max if settings else 12
+    if maximum > 0:
+        await asyncio.sleep(random.uniform(minimum, maximum))
 
 
 def _expand_prompt(template: str, question: ZhihuQuestion, product: PromotedProduct) -> str:
@@ -319,4 +330,6 @@ async def _run_publish(job_id: uuid.UUID) -> None:
                     current_account.status = AccountStatus.online
             current.completed_count += 1
             await db.commit()
+        if index + 1 < len(answer_ids) and await _permission(job_id) not in _terminal:
+            await _publish_delay()
     await _finish(job_id)

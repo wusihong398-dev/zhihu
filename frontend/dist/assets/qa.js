@@ -13,7 +13,8 @@
   function escapeHtml(value) { const node = document.createElement("div"); node.textContent = value ?? ""; return node.innerHTML; }
   function toast(message, type = "success") { const node = document.createElement("div"); node.className = `toast ${type}`; node.textContent = message; $("#toast-region").appendChild(node); setTimeout(() => node.remove(), 4500); }
   async function api(path, options = {}) {
-    const response = await fetch(`/api${path}`, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+    const token = sessionStorage.getItem("totod_token") || "";
+    const response = await fetch(`/api${path}`, { credentials: "same-origin", headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }, ...options });
     if (!response.ok) { let detail = `请求失败（HTTP ${response.status}）`; try { const body = await response.json(); detail = body.detail || detail; if (Array.isArray(detail)) detail = detail.map((item) => item.msg).join("；"); } catch (_) {} throw new Error(detail); }
     if (response.status === 204) return null;
     return response.json();

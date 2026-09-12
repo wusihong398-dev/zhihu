@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.models.account import ZhihuAccount
 from app.services.account_storage import account_storage_path
 from app.services.browser_lock import get_account_browser_lock
+from app.services.system_settings import browser_timeout_ms
 from app.services.zhihu_login import has_zhihu_auth_cookie
 
 
@@ -49,7 +50,7 @@ def _published_article_from_payload(payload: Any) -> ZhihuPublishedArticle | Non
 
 
 async def _fetch_articles_from_api(
-    request: Any, url_token: str, max_items: int
+    request: Any, url_token: str, max_items: int, timeout_ms: int = 30000
 ) -> list[ZhihuPublishedArticle]:
     items: list[ZhihuPublishedArticle] = []
     seen_ids: set[str] = set()
@@ -60,7 +61,7 @@ async def _fetch_articles_from_api(
             f"https://www.zhihu.com/api/v4/members/{quote(url_token, safe='')}"
             f"/articles?offset={offset}&limit={limit}&sort_by=created"
         )
-        response = await request.get(url, timeout=20000)
+        response = await request.get(url, timeout=timeout_ms)
         if response.status != 200:
             if items:
                 break
@@ -87,9 +88,9 @@ async def _fetch_articles_from_api(
 
 
 async def _extract_articles_from_page(
-    page: Any, profile_url: str, max_items: int
+    page: Any, profile_url: str, max_items: int, timeout_ms: int = 30000
 ) -> list[ZhihuPublishedArticle]:
-    await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+    await page.goto(profile_url, wait_until="domcontentloaded", timeout=timeout_ms)
     await page.wait_for_timeout(2500)
     stable_rounds = 0
     previous_height = 0
@@ -154,6 +155,8 @@ async def fetch_zhihu_published_articles(
     try:
         from playwright.async_api import async_playwright
 
+        timeout_ms = await browser_timeout_ms()
+
         playwright = await async_playwright().start()
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(root / "browser-profile"),
@@ -168,10 +171,12 @@ async def fetch_zhihu_published_articles(
             raise ZhihuArticleSyncLoginRequired("知乎登录已失效，请先重新扫码登录")
 
         page = context.pages[0] if context.pages else await context.new_page()
+        page.set_default_timeout(timeout_ms)
+        page.set_default_navigation_timeout(timeout_ms)
         url_token = ""
         try:
             me_response = await context.request.get(
-                "https://www.zhihu.com/api/v4/me", timeout=20000
+                "https://www.zhihu.com/api/v4/me", timeout=timeout_ms
             )
             if me_response.status == 200:
                 me_payload = await me_response.json()
@@ -185,7 +190,7 @@ async def fetch_zhihu_published_articles(
         if url_token:
             try:
                 articles = await _fetch_articles_from_api(
-                    context.request, url_token, max_items
+                    context.request, url_token, max_items, timeout_ms
                 )
                 if articles:
                     return articles
@@ -195,7 +200,9 @@ async def fetch_zhihu_published_articles(
         else:
             profile_url = "https://www.zhihu.com/creator/manage/creation/all"
 
-        articles = await _extract_articles_from_page(page, profile_url, max_items)
+        articles = await _extract_articles_from_page(
+            page, profile_url, max_items, timeout_ms
+        )
         if not articles:
             body_text = await page.locator("body").inner_text(timeout=5000)
             if any(marker in body_text for marker in ("登录知乎", "安全验证", "验证码")):

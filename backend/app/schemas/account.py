@@ -11,7 +11,7 @@ class AccountCreate(BaseModel):
     remark: str = Field(default="", max_length=255)
     daily_article_limit: int = Field(default=0, ge=0, le=100)
     daily_answer_limit: int = Field(default=0, ge=0, le=200)
-    timezone: str = Field(default="Asia/Shanghai", max_length=64)
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class AccountUpdate(BaseModel):

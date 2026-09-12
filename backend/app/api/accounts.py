@@ -1,5 +1,6 @@
 import logging
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, Response
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import require_active_user
 from app.db.session import get_db
 from app.models.account import AccountStatus, ZhihuAccount
+from app.models.system_setting import SystemSetting
 from app.models.user import User, UserRole
 from app.schemas.account import (
     AccountCreate,
@@ -40,6 +42,16 @@ router = APIRouter(
 )
 
 
+def _validate_timezone(value: str | None) -> str:
+    if not value:
+        raise HTTPException(status_code=422, detail="账号时区不能为空")
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="账号时区无效") from exc
+    return value
+
+
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: AccountCreate,
@@ -47,7 +59,14 @@ async def create_account(
     user: User = Depends(require_active_user),
 ) -> ZhihuAccount:
     owner_user_id = None if user.role == UserRole.admin else user.id
-    account = ZhihuAccount(owner_user_id=owner_user_id, **payload.model_dump())
+    data = payload.model_dump()
+    if not data["timezone"]:
+        system_setting = await db.get(SystemSetting, 1)
+        data["timezone"] = (
+            system_setting.default_timezone if system_setting else "Asia/Shanghai"
+        )
+    data["timezone"] = _validate_timezone(data["timezone"])
+    account = ZhihuAccount(owner_user_id=owner_user_id, **data)
     db.add(account)
     await db.flush()
     try:
@@ -89,7 +108,10 @@ async def update_account(
     user: User = Depends(require_active_user),
 ) -> ZhihuAccount:
     account = await get_account_for_user(account_id, user, db)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if "timezone" in data:
+        data["timezone"] = _validate_timezone(data["timezone"])
+    for field, value in data.items():
         setattr(account, field, value)
     await db.commit()
     await db.refresh(account)

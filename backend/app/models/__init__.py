@@ -23,6 +23,8 @@ from app.models.keyword_job import (
 )
 from app.models.product import PromotedProduct
 from app.models.question import QuestionStatus, ZhihuQuestion
+from app.models.schedule import OperationSchedule, ScheduleRunStatus, ScheduleTaskType
+from app.models.system_setting import SystemSetting
 from app.models.user import User, UserRole
 from app.models.user_ai_provider import UserAIProviderConfig
 
@@ -57,4 +59,8 @@ __all__ = [
     "ZhihuAccount",
     "ZhihuAnswer",
     "ZhihuQuestion",
+    "OperationSchedule",
+    "ScheduleRunStatus",
+    "ScheduleTaskType",
+    "SystemSetting",
 ]
