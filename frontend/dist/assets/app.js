@@ -744,7 +744,8 @@
     const provider = $("#article-generate-provider");
     const oldProvider = provider.value;
     const enabledProviders = state.providers.filter((item) => item.enabled && item.has_api_key);
-    provider.innerHTML = `<option value="">请选择已配置的平台</option>${enabledProviders.map((item) => `<option value="${item.provider}">${escapeHtml(item.display_name)} · ${escapeHtml(item.model)}</option>`).join("")}`;
+    const unavailableProviders = state.providers.filter((item) => !item.enabled || !item.has_api_key);
+    provider.innerHTML = `<option value="">请选择已配置的平台</option>${enabledProviders.map((item) => `<option value="${item.provider}">${escapeHtml(item.display_name)} · ${escapeHtml(item.model)}</option>`).join("")}${unavailableProviders.map((item) => `<option value="" disabled>${escapeHtml(item.display_name)}（请先到 AI 配置保存密钥）</option>`).join("")}`;
     if (enabledProviders.some((item) => item.provider === oldProvider)) provider.value = oldProvider;
     else if (enabledProviders.length === 1) provider.value = enabledProviders[0].provider;
   }
@@ -943,7 +944,7 @@
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
-    if (page === "ai" && !state.providers.length) loadProviders(true);
+    if (page === "ai") loadProviders(true);
     if (page === "keywords") loadKeywordData(true);
     if (page === "products") loadProducts(true);
     if (page === "users") loadUsers(true);
