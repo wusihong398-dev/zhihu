@@ -28,15 +28,18 @@ def test_health_version_and_auth_boundary() -> None:
 
 def test_article_list_requires_one_account_at_a_time() -> None:
     index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    article_page = index.split('<div id="articles-page"', 1)[1].split(
+        '<div id="article-publish-page"', 1
+    )[0]
     script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
         encoding="utf-8"
     )
-    assert "全部知乎账号" not in index
-    assert "全部状态" not in index
-    assert 'data-status="draft"' in index
-    assert 'data-status="ready"' in index
-    assert 'data-status="published"' in index
-    assert 'data-status="failed"' in index
+    assert "全部知乎账号" not in article_page
+    assert "全部状态" not in article_page
+    assert 'data-status="draft"' in article_page
+    assert 'data-status="ready"' in article_page
+    assert 'data-status="published"' in article_page
+    assert 'data-status="failed"' in article_page
     assert 'params.set("account_id", accountId)' in script
     assert 'params.set("status", articleStatus)' in script
     assert "state.articles = { items: [], total: 0 }" in script
