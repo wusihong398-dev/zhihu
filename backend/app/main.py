@@ -14,6 +14,7 @@ from app.api import (
 )
 from app.core.config import settings
 from app.db.session import create_schema, engine
+from app.services.zhihu_login import close_all_login_sessions
 import app.models  # noqa: F401 - registers database models
 
 
@@ -24,12 +25,13 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        await close_all_login_sessions()
         await engine.dispose()
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.8.1",
+    version="0.9.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",

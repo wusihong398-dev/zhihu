@@ -1,6 +1,7 @@
 import asyncio
 import re
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, or_, select, update
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_active_user
 from app.db.session import get_db
-from app.models.account import ZhihuAccount
+from app.models.account import AccountStatus, ZhihuAccount
 from app.models.article import Article, ArticleStatus
 from app.models.keyword import AccountKeyword
 from app.models.product import PromotedProduct
@@ -31,6 +32,11 @@ from app.services.ai_providers import (
     generate_article_content,
 )
 from app.services.secret_box import decrypt_secret
+from app.services.zhihu_publisher import (
+    ZhihuLoginRequired,
+    ZhihuPublishError,
+    publish_article_to_zhihu,
+)
 
 router = APIRouter(tags=["articles"], dependencies=[Depends(require_active_user)])
 
@@ -337,6 +343,48 @@ async def update_article(
         article.content_length = _content_length(payload.content)
     if article.status != ArticleStatus.failed:
         article.error_message = None
+    await db.commit()
+    await db.refresh(article)
+    return _article_read(article, account.display_name)
+
+
+@router.post(
+    "/accounts/{account_id}/articles/{article_id}/publish",
+    response_model=ArticleRead,
+)
+async def publish_article(
+    account_id: uuid.UUID,
+    article_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleRead:
+    account = await get_account_for_user(account_id, user, db)
+    article = await _get_article(account_id, article_id, db)
+    if not account.enabled:
+        raise HTTPException(status_code=400, detail="知乎账号已停用")
+    if article.status != ArticleStatus.ready:
+        raise HTTPException(status_code=400, detail="请先将文章状态设置为待发布")
+    if not article.title.strip() or not article.content.strip():
+        raise HTTPException(status_code=400, detail="文章标题和正文不能为空")
+    if len(article.title.strip()) > 100:
+        raise HTTPException(status_code=400, detail="知乎文章标题不能超过 100 个字符")
+    try:
+        published_url = await publish_article_to_zhihu(account, article)
+    except ZhihuLoginRequired as exc:
+        account.status = AccountStatus.offline
+        article.error_message = str(exc)
+        await db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ZhihuPublishError as exc:
+        article.status = ArticleStatus.failed
+        article.error_message = str(exc)
+        await db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    account.status = AccountStatus.online
+    article.status = ArticleStatus.published
+    article.published_url = published_url
+    article.published_at = datetime.now(UTC)
+    article.error_message = None
     await db.commit()
     await db.refresh(article)
     return _article_read(article, account.display_name)

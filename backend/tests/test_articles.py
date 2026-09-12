@@ -101,3 +101,36 @@ def test_regular_users_cannot_see_each_others_articles() -> None:
             )
     finally:
         app.dependency_overrides.pop(require_active_user, None)
+
+
+def test_ready_article_can_be_published_with_its_account(monkeypatch) -> None:
+    async def fake_publish(account, article) -> str:
+        assert account.id == article.account_id
+        return "https://zhuanlan.zhihu.com/p/123456789"
+
+    monkeypatch.setattr(
+        "app.api.articles.publish_article_to_zhihu", fake_publish
+    )
+    app.dependency_overrides[require_active_user] = lambda: ADMIN
+    try:
+        with TestClient(app) as client:
+            account = client.post(
+                "/api/accounts", json={"display_name": "真实发布测试账号"}
+            ).json()
+            article = client.post(
+                f"/api/accounts/{account['id']}/articles",
+                json={
+                    "title": "一篇等待发布的文章",
+                    "content": "这是一篇将通过独立知乎登录会话发布的正文。",
+                    "status": "ready",
+                },
+            ).json()
+            published = client.post(
+                f"/api/accounts/{account['id']}/articles/{article['id']}/publish"
+            )
+            assert published.status_code == 200
+            assert published.json()["status"] == "published"
+            assert published.json()["published_url"].endswith("/123456789")
+            assert published.json()["published_at"] is not None
+    finally:
+        app.dependency_overrides.pop(require_active_user, None)

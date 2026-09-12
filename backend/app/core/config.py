@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     account_data_root: Path = Path("/var/lib/totod/accounts")
     default_timezone: str = "Asia/Shanghai"
+    chromium_executable: str = "/usr/bin/chromium"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

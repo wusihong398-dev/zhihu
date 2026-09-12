@@ -21,7 +21,6 @@ class AccountUpdate(BaseModel):
     daily_answer_limit: int | None = Field(default=None, ge=0, le=200)
     timezone: str | None = Field(default=None, max_length=64)
     enabled: bool | None = None
-    status: AccountStatus | None = None
 
 
 class AccountRead(BaseModel):
@@ -38,3 +37,13 @@ class AccountRead(BaseModel):
     timezone: str
     created_at: datetime
     updated_at: datetime
+
+
+class ZhihuLoginSessionRead(BaseModel):
+    session_id: uuid.UUID
+    account_id: uuid.UUID
+    status: AccountStatus
+    message: str
+    screenshot_version: int
+    created_at: datetime
+    expires_at: datetime

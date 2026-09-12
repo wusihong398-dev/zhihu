@@ -22,6 +22,13 @@ def initialize_account_storage(account_id: uuid.UUID, profile_key: str) -> Path:
     return account_root
 
 
+def account_storage_path(account_id: uuid.UUID, profile_key: str) -> Path:
+    root = settings.account_data_root / str(account_id) / profile_key
+    if not root.is_dir():
+        raise FileNotFoundError("知乎账号独立存储目录不存在")
+    return root
+
+
 def remove_empty_account_storage(account_id: uuid.UUID) -> None:
     """Best-effort cleanup used only when account creation fails before use."""
     root = settings.account_data_root / str(account_id)
@@ -29,4 +36,3 @@ def remove_empty_account_storage(account_id: uuid.UUID) -> None:
         root.rmdir()
     except OSError:
         return
-

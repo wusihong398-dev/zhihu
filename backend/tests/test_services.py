@@ -11,6 +11,7 @@ from app.services.keyword_collector import (
     parse_google_suggestions,
 )
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
+from app.services.zhihu_login import has_zhihu_auth_cookie
 
 
 def test_secret_round_trip() -> None:
@@ -72,3 +73,13 @@ def test_verification_page_detection() -> None:
         200, text="Our systems have detected unusual traffic", request=request
     )
     assert is_verification_page("google", response)
+
+
+def test_zhihu_login_requires_real_auth_cookie() -> None:
+    assert has_zhihu_auth_cookie(
+        [{"name": "z_c0", "value": "encrypted-login-cookie"}]
+    )
+    assert not has_zhihu_auth_cookie(
+        [{"name": "d_c0", "value": "device-cookie"}]
+    )
+    assert not has_zhihu_auth_cookie([{"name": "z_c0", "value": ""}])

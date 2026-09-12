@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], page: "overview", pollTimer: null, articleSearchTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -32,6 +32,21 @@
       throw new Error(detail || `请求失败（${response.status}）`);
     }
     return data;
+  }
+
+  async function apiBlob(path) {
+    const headers = state.token ? { Authorization: `Bearer ${state.token}` } : {};
+    const response = await fetch(`/api${path}`, { headers, cache: "no-store" });
+    if (response.status === 401) {
+      logout("登录已过期，请重新登录");
+      throw new Error("登录已过期");
+    }
+    if (!response.ok) {
+      let message = `请求失败（${response.status}）`;
+      try { message = (await response.json()).detail || message; } catch { /* 图片接口可能不返回 JSON */ }
+      throw new Error(message);
+    }
+    return response.blob();
   }
 
   function setBusy(button, busy, busyText = "处理中…") {
@@ -66,6 +81,10 @@
 
   function logout(message = "") {
     window.clearTimeout(state.pollTimer);
+    window.clearTimeout(state.zhihuLoginTimer);
+    if (state.zhihuScreenshotUrl) URL.revokeObjectURL(state.zhihuScreenshotUrl);
+    state.zhihuLogin = null;
+    state.zhihuScreenshotUrl = "";
     state.token = "";
     state.user = null;
     state.users = [];
@@ -94,12 +113,18 @@
   }
 
   function accountRow(account) {
+    const statusMap = {
+      pending_login: ["待登录", "pending"], online: ["已登录", ""], offline: ["已离线", "off"],
+      verification_required: ["需要验证", "warning"], restricted: ["账号受限", "danger"], paused: ["已暂停", "off"]
+    };
+    const [statusLabel, statusClass] = statusMap[account.status] || ["未知", "off"];
     return `<div class="account-row" data-account-id="${account.id}">
       <div class="account-name"><strong>${escapeHtml(account.display_name)}</strong><small>${escapeHtml(account.remark || "暂无备注")}</small></div>
       <label class="inline-field"><input class="article-input" aria-label="${escapeHtml(account.display_name)}每日文章数量" type="number" min="0" max="100" value="${account.daily_article_limit}"><span>篇/天</span></label>
       <label class="inline-field"><input class="answer-input" aria-label="${escapeHtml(account.display_name)}每日回答数量" type="number" min="0" max="200" value="${account.daily_answer_limit}"><span>个/天</span></label>
+      <span class="badge login-status ${statusClass}">${statusLabel}</span>
       <label class="switch" title="启用或停用账号"><input class="enabled-input" type="checkbox" ${account.enabled ? "checked" : ""} aria-label="启用${escapeHtml(account.display_name)}"><i></i></label>
-      <div class="row-actions"><button class="button button-ghost save-account">保存设置</button></div>
+      <div class="row-actions"><button class="button button-primary login-account" type="button">${account.status === "online" ? "重新登录" : "登录知乎"}</button><button class="button button-ghost save-account" type="button">保存设置</button></div>
     </div>`;
   }
 
@@ -108,9 +133,10 @@
     const filtered = state.accounts.filter((account) => `${account.display_name} ${account.remark}`.toLowerCase().includes(query));
     $("#account-count").textContent = `共 ${state.accounts.length} 个账号`;
     const table = $("#accounts-table");
-    table.innerHTML = filtered.length ? `<div class="account-row header"><span>账号</span><span>每日文章</span><span>每日回答</span><span>状态</span><span></span></div>${filtered.map(accountRow).join("")}` : "";
+    table.innerHTML = filtered.length ? `<div class="account-row header"><span>账号</span><span>每日文章</span><span>每日回答</span><span>知乎登录</span><span>启用</span><span></span></div>${filtered.map(accountRow).join("")}` : "";
     $("#accounts-empty").hidden = state.accounts.length !== 0 || query !== "";
     $$(".save-account", table).forEach((button) => button.addEventListener("click", saveAccount));
+    $$(".login-account", table).forEach((button) => button.addEventListener("click", openZhihuLogin));
   }
 
   function renderAll() {
@@ -150,6 +176,92 @@
       toast(error.message, "error");
       setBusy(button, false);
     }
+  }
+
+  function setZhihuLoginMessage(session) {
+    const labelMap = { pending_login: "等待扫码", online: "登录成功", offline: "登录已结束", verification_required: "需要人工验证" };
+    $("#zhihu-login-state").textContent = labelMap[session.status] || "正在连接";
+    $("#zhihu-login-message").textContent = session.message || "请稍候";
+    $("#zhihu-login-state").className = `badge login-status ${session.status === "online" ? "" : session.status === "verification_required" ? "warning" : session.status === "offline" ? "danger" : "pending"}`;
+  }
+
+  async function refreshZhihuLoginScreenshot(force = false) {
+    const session = state.zhihuLogin;
+    if (!session || (!force && session.screenshot_version === state.zhihuScreenshotVersion)) return;
+    const blob = await apiBlob(`/accounts/${session.account_id}/login-session/${session.session_id}/screenshot?v=${session.screenshot_version}`);
+    if (state.zhihuScreenshotUrl) URL.revokeObjectURL(state.zhihuScreenshotUrl);
+    state.zhihuScreenshotUrl = URL.createObjectURL(blob);
+    state.zhihuScreenshotVersion = session.screenshot_version;
+    $("#zhihu-login-screenshot").src = state.zhihuScreenshotUrl;
+    $("#zhihu-login-screenshot").hidden = false;
+    $("#zhihu-login-loading").hidden = true;
+  }
+
+  function scheduleZhihuLoginPoll() {
+    window.clearTimeout(state.zhihuLoginTimer);
+    state.zhihuLoginTimer = window.setTimeout(pollZhihuLogin, 2500);
+  }
+
+  async function pollZhihuLogin() {
+    const current = state.zhihuLogin;
+    if (!current || $("#zhihu-login-dialog").hidden) return;
+    try {
+      const session = await api(`/accounts/${current.account_id}/login-session/${current.session_id}`);
+      if (!state.zhihuLogin || state.zhihuLogin.session_id !== session.session_id) return;
+      state.zhihuLogin = session;
+      setZhihuLoginMessage(session);
+      await refreshZhihuLoginScreenshot();
+      if (session.status === "online") {
+        await loadAccounts(true);
+        toast("知乎账号登录成功，独立登录状态已保存");
+        return;
+      }
+      if (session.status === "offline") return;
+      scheduleZhihuLoginPoll();
+    } catch (error) {
+      $("#zhihu-login-message").textContent = error.message;
+      $("#zhihu-login-state").textContent = "连接失败";
+      $("#zhihu-login-state").className = "badge login-status danger";
+    }
+  }
+
+  async function openZhihuLogin(event) {
+    const button = event.currentTarget;
+    const row = button.closest(".account-row");
+    const accountId = row.dataset.accountId;
+    const account = state.accounts.find((item) => item.id === accountId);
+    setBusy(button, true, "打开登录页…");
+    try {
+      const session = await api(`/accounts/${accountId}/login-session`, { method: "POST" });
+      state.zhihuLogin = session;
+      state.zhihuScreenshotVersion = -1;
+      $("#zhihu-login-title").textContent = `登录知乎 · ${account?.display_name || "账号"}`;
+      $("#zhihu-login-screenshot").hidden = true;
+      $("#zhihu-login-loading").hidden = false;
+      $("#zhihu-login-dialog").hidden = false;
+      setZhihuLoginMessage(session);
+      await refreshZhihuLoginScreenshot(true);
+      if (session.status !== "online" && session.status !== "offline") scheduleZhihuLoginPoll();
+      else if (session.status === "online") await loadAccounts(true);
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  function closeZhihuLoginDialog() {
+    window.clearTimeout(state.zhihuLoginTimer);
+    const session = state.zhihuLogin;
+    if (session) {
+      api(`/accounts/${session.account_id}/login-session/${session.session_id}`, { method: "DELETE" }).catch(() => {});
+    }
+    state.zhihuLogin = null;
+    state.zhihuScreenshotVersion = -1;
+    if (state.zhihuScreenshotUrl) URL.revokeObjectURL(state.zhihuScreenshotUrl);
+    state.zhihuScreenshotUrl = "";
+    $("#zhihu-login-screenshot").removeAttribute("src");
+    $("#zhihu-login-dialog").hidden = true;
   }
 
   function openAccountDialog() {
@@ -829,6 +941,12 @@
     return { draft: "草稿", ready: "待发布", published: "已发布", failed: "失败" }[value] || value;
   }
 
+  function articleActionButtons(item) {
+    const publish = item.status === "ready" ? `<button class="button button-primary article-publish" type="button">发布到知乎</button>` : "";
+    const view = item.status === "published" && item.published_url ? `<a class="button button-ghost article-view" href="${escapeHtml(item.published_url)}" target="_blank" rel="noopener noreferrer">查看</a>` : "";
+    return `${publish}${view}<button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button>`;
+  }
+
   function updateArticleSelection() {
     const visibleIds = (state.articles.items || []).map((item) => item.id);
     const selectedVisible = visibleIds.filter((id) => state.selectedArticles.has(id));
@@ -842,7 +960,7 @@
   function renderArticles() {
     const items = state.articles.items || [];
     $("#article-total").textContent = `共 ${state.articles.total || 0} 篇`;
-    $("#article-list").innerHTML = items.map((item) => `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong><small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small></label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions"><button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button></div></div>`).join("");
+    $("#article-list").innerHTML = items.map((item) => `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong><small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small></label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions">${articleActionButtons(item)}</div></div>`).join("");
     $("#article-empty").hidden = items.length !== 0;
     $$(".article-title-cell input", $("#article-list")).forEach((input) => input.addEventListener("change", (event) => {
       const id = event.currentTarget.closest(".article-row").dataset.articleId;
@@ -850,6 +968,7 @@
       updateArticleSelection();
     }));
     $$(".article-edit", $("#article-list")).forEach((button) => button.addEventListener("click", () => openArticleDialog(state.articles.items.find((item) => item.id === button.closest(".article-row").dataset.articleId))));
+    $$(".article-publish", $("#article-list")).forEach((button) => button.addEventListener("click", publishArticle));
     $$(".article-delete", $("#article-list")).forEach((button) => button.addEventListener("click", () => deleteArticle(button.closest(".article-row").dataset.articleId)));
     const totalPages = Math.max(1, Math.ceil((state.articles.total || 0) / state.articlePageSize));
     $("#article-pagination").hidden = !state.articles.total;
@@ -914,6 +1033,25 @@
       await api(`/accounts/${article.account_id}/articles/${article.id}`, { method: "DELETE" });
       await loadArticles(true); toast("文章已删除");
     } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function publishArticle(event) {
+    const button = event.currentTarget;
+    const articleId = button.closest(".article-row").dataset.articleId;
+    const article = state.articles.items.find((item) => item.id === articleId);
+    if (!article || !window.confirm(`确定使用“${article.account_name}”发布文章“${article.title}”吗？`)) return;
+    setBusy(button, true, "正在发布…");
+    try {
+      const result = await api(`/accounts/${article.account_id}/articles/${article.id}/publish`, { method: "POST" });
+      await loadArticles(true);
+      await loadAccounts(true);
+      toast("文章已真实发布到知乎");
+      if (result.published_url && window.confirm("发布成功，是否打开知乎文章？")) window.open(result.published_url, "_blank", "noopener");
+    } catch (error) {
+      toast(error.message, "error");
+      await loadArticles(true);
+      await loadAccounts(true);
+    } finally { setBusy(button, false); }
   }
 
   async function bulkArticleStatus() {
@@ -1049,11 +1187,15 @@
     $("#dialog-close").addEventListener("click", closeAccountDialog);
     $("#dialog-cancel").addEventListener("click", closeAccountDialog);
     $("#account-dialog").addEventListener("click", (event) => { if (event.target.id === "account-dialog") closeAccountDialog(); });
+    $("#zhihu-login-close").addEventListener("click", closeZhihuLoginDialog);
+    $("#zhihu-login-done").addEventListener("click", closeZhihuLoginDialog);
+    $("#zhihu-login-refresh").addEventListener("click", pollZhihuLogin);
+    $("#zhihu-login-dialog").addEventListener("click", (event) => { if (event.target.id === "zhihu-login-dialog") closeZhihuLoginDialog(); });
     $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     $$('[data-page-link]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageLink)));
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); closeArticleDialog(); } });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); closeArticleDialog(); closeZhihuLoginDialog(); } });
 
     try {
       const version = await api("/version");
