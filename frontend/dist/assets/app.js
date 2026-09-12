@@ -268,6 +268,14 @@
     $("#zhihu-login-dialog").hidden = true;
   }
 
+  function openZhihuLoginScreenshot() {
+    if (!state.zhihuScreenshotUrl) {
+      toast("登录页面截图尚未生成", "error");
+      return;
+    }
+    window.open(state.zhihuScreenshotUrl, "_blank", "noopener,noreferrer");
+  }
+
   function openAccountDialog(account = null) {
     const editing = account && account.id ? account : null;
     state.editingAccountId = editing?.id || null;
@@ -1479,6 +1487,7 @@
     $("#account-dialog").addEventListener("click", (event) => { if (event.target.id === "account-dialog") closeAccountDialog(); });
     $("#zhihu-login-close").addEventListener("click", closeZhihuLoginDialog);
     $("#zhihu-login-done").addEventListener("click", closeZhihuLoginDialog);
+    $("#zhihu-login-open").addEventListener("click", openZhihuLoginScreenshot);
     $("#zhihu-login-refresh").addEventListener("click", pollZhihuLogin);
     $("#zhihu-login-dialog").addEventListener("click", (event) => { if (event.target.id === "zhihu-login-dialog") closeZhihuLoginDialog(); });
     $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));

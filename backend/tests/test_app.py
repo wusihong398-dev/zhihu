@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.10.4"
+        assert version.json()["version"] == "0.10.5"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -48,3 +48,10 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert 'class="button button-ghost edit-account"' in script
     assert 'class="button button-ghost danger-text delete-account"' in script
     assert "登录资料、商品、关键词和文章将一并删除" in script
+    login_css = (PROJECT_ROOT / "frontend/dist/assets/login.css").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="zhihu-login-open"' in index
+    assert "openZhihuLoginScreenshot" in script
+    assert "width: min(1600px, calc(100vw - 32px)) !important" in login_css
+    assert "object-fit: contain" in login_css
