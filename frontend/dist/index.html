@@ -7,7 +7,7 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.3.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.4.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -108,13 +108,15 @@
             <div class="form-body">
               <label for="keyword-account">保存到知乎账号</label>
               <select id="keyword-account" required><option value="">请先选择账号</option></select>
+              <div class="label-row"><label for="keyword-folder">保存到文件夹</label><button id="folder-quick-create" class="text-button" type="button">＋ 新建文件夹</button></div>
+              <select id="keyword-folder"><option value="">未归档</option></select>
               <label for="seed-keyword">主关键词</label>
               <input id="seed-keyword" maxlength="255" placeholder="例如：智能家居" required>
               <div class="field-grid">
                 <div><label for="keyword-source">搜索引擎</label><select id="keyword-source"><option value="both">百度 + 谷歌</option><option value="baidu">仅百度</option><option value="google">仅谷歌</option></select></div>
                 <div><label for="keyword-target">采集数量</label><input id="keyword-target" type="number" min="1" max="500" value="50" required></div>
               </div>
-              <p class="field-help">搜索引擎可能要求验证；任务会记录已完成数量和具体原因。</p>
+              <p class="field-help">优先采集网页底部相关搜索；页面验证或结果偏少时，自动用同一搜索引擎的搜索联想补足。</p>
               <p id="keyword-error" class="form-error" role="alert"></p>
               <button id="keyword-start" class="button button-primary button-block" type="submit">开始采集</button>
             </div>
@@ -132,6 +134,19 @@
         </section>
         <section class="panel keyword-list-panel">
           <div class="panel-head"><div><span class="eyebrow">账号关键词库</span><h3>已采集关键词</h3></div><strong id="keyword-total" class="panel-count">0 个</strong></div>
+          <div class="folder-toolbar">
+            <select id="folder-filter" aria-label="筛选关键词文件夹"><option value="all">全部关键词</option><option value="unfiled">未归档</option></select>
+            <button id="folder-create" class="button button-ghost" type="button">新建文件夹</button>
+            <button id="folder-rename" class="button button-ghost" type="button">重命名</button>
+            <button id="folder-delete" class="button button-ghost danger-text" type="button">删除文件夹</button>
+          </div>
+          <div class="selection-toolbar">
+            <label class="select-all"><input id="keyword-select-all" type="checkbox"> 全选当前页</label>
+            <span id="keyword-selected-count">已选 0 个</span>
+            <select id="keyword-move-folder" aria-label="移动到文件夹"><option value="">移动到未归档</option></select>
+            <button id="keyword-move" class="button button-ghost" type="button">移动所选</button>
+            <button id="keyword-delete" class="button button-ghost danger-text" type="button">删除所选</button>
+          </div>
           <div id="keyword-list" class="keyword-list"></div>
           <div id="keyword-empty" class="empty-state"><span>⌕</span><h3>还没有关键词</h3><p>选择账号并执行一次关键词采集任务。</p></div>
         </section>
@@ -164,6 +179,6 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.3.0" defer></script>
+  <script src="/assets/app.js?v=0.4.0" defer></script>
 </body>
 </html>

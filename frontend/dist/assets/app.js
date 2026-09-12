@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], providers: [], keywords: [], keywordJob: null, page: "overview", pollTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordJob: null, page: "overview", pollTimer: null };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -272,12 +272,50 @@
     $("#job-message").textContent = job.error_message || (job.status === "running" ? "正在从搜索页面提取相关关键词…" : "");
   }
 
+  function folderOptions(prefix = "") {
+    return state.keywordFolders.map((folder) => `<option value="${folder.id}">${prefix}${escapeHtml(folder.name)}（${folder.keyword_count}）</option>`).join("");
+  }
+
+  function renderKeywordFolders() {
+    const jobFolder = $("#keyword-folder").value;
+    const filter = $("#folder-filter").value;
+    const moveFolder = $("#keyword-move-folder").value;
+    $("#keyword-folder").innerHTML = `<option value="">未归档</option>${folderOptions()}`;
+    $("#folder-filter").innerHTML = `<option value="all">全部关键词</option><option value="unfiled">未归档</option>${folderOptions()}`;
+    $("#keyword-move-folder").innerHTML = `<option value="">移动到未归档</option>${folderOptions("移动到：")}`;
+    if (state.keywordFolders.some((folder) => folder.id === jobFolder)) $("#keyword-folder").value = jobFolder;
+    if (["all", "unfiled"].includes(filter) || state.keywordFolders.some((folder) => folder.id === filter)) $("#folder-filter").value = filter;
+    if (state.keywordFolders.some((folder) => folder.id === moveFolder)) $("#keyword-move-folder").value = moveFolder;
+    const editable = !["all", "unfiled", ""].includes($("#folder-filter").value);
+    $("#folder-rename").disabled = !editable;
+    $("#folder-delete").disabled = !editable;
+  }
+
+  function updateKeywordSelection() {
+    const visibleIds = (state.keywords.items || []).map((item) => item.id);
+    const selectedVisible = visibleIds.filter((id) => state.selectedKeywords.has(id));
+    $("#keyword-selected-count").textContent = `已选 ${state.selectedKeywords.size} 个`;
+    $("#keyword-select-all").checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    $("#keyword-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    $("#keyword-move").disabled = state.selectedKeywords.size === 0;
+    $("#keyword-delete").disabled = state.selectedKeywords.size === 0;
+  }
+
   function renderKeywords() {
     $("#keyword-total").textContent = `${state.keywords.total || 0} 个`;
     const items = state.keywords.items || [];
-    $("#keyword-list").innerHTML = items.map((item) => `<article class="keyword-item"><strong title="${escapeHtml(item.keyword)}">${escapeHtml(item.keyword)}</strong><small><span class="source-${item.source}">${item.source === "baidu" ? "百度" : item.source === "google" ? "谷歌" : "其他"}</span><span>第 ${item.depth} 层</span></small></article>`).join("");
+    const folderNames = new Map(state.keywordFolders.map((folder) => [folder.id, folder.name]));
+    $("#keyword-list").innerHTML = items.map((item) => `<article class="keyword-item ${state.selectedKeywords.has(item.id) ? "selected" : ""}" data-keyword-id="${item.id}"><label class="keyword-check"><input type="checkbox" ${state.selectedKeywords.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.keyword)}"><span></span></label><div><strong title="${escapeHtml(item.keyword)}">${escapeHtml(item.keyword)}</strong><small><span class="source-${item.source}">${item.source === "baidu" ? "百度" : item.source === "google" ? "谷歌" : "其他"}</span><span>${escapeHtml(folderNames.get(item.folder_id) || "未归档")}</span><span>第 ${item.depth} 层</span></small></div></article>`).join("");
     $("#keyword-list").hidden = items.length === 0;
     $("#keyword-empty").hidden = items.length !== 0;
+    $$(".keyword-check input", $("#keyword-list")).forEach((input) => input.addEventListener("change", (event) => {
+      const item = event.currentTarget.closest(".keyword-item");
+      if (event.currentTarget.checked) state.selectedKeywords.add(item.dataset.keywordId);
+      else state.selectedKeywords.delete(item.dataset.keywordId);
+      item.classList.toggle("selected", event.currentTarget.checked);
+      updateKeywordSelection();
+    }));
+    updateKeywordSelection();
   }
 
   function scheduleJobPoll() {
@@ -293,16 +331,24 @@
     if (!accountId) {
       state.keywordJob = null;
       state.keywords = { items: [], total: 0 };
-      renderKeywordJob(); renderKeywords(); return;
+      state.keywordFolders = [];
+      state.selectedKeywords.clear();
+      renderKeywordFolders(); renderKeywordJob(); renderKeywords(); return;
     }
     try {
-      const [job, keywords] = await Promise.all([
+      const filter = $("#folder-filter").value;
+      const query = filter === "unfiled" ? "&unfiled=true" : !["all", ""].includes(filter) ? `&folder_id=${encodeURIComponent(filter)}` : "";
+      const [job, folders, keywords] = await Promise.all([
         api(`/accounts/${accountId}/keyword-jobs/latest`),
-        api(`/accounts/${accountId}/keywords?limit=100`)
+        api(`/accounts/${accountId}/keyword-folders`),
+        api(`/accounts/${accountId}/keywords?limit=500${query}`)
       ]);
       state.keywordJob = job;
+      state.keywordFolders = folders;
       state.keywords = keywords;
-      renderKeywordJob(); renderKeywords(); scheduleJobPoll();
+      const visibleIds = new Set(keywords.items.map((item) => item.id));
+      state.selectedKeywords = new Set([...state.selectedKeywords].filter((id) => visibleIds.has(id)));
+      renderKeywordFolders(); renderKeywordJob(); renderKeywords(); scheduleJobPoll();
       if (!silent) toast("关键词数据已刷新");
     } catch (error) { toast(error.message, "error"); }
   }
@@ -317,11 +363,73 @@
     try {
       state.keywordJob = await api(`/accounts/${accountId}/keyword-jobs`, {
         method: "POST",
-        body: JSON.stringify({ seed_keyword: $("#seed-keyword").value.trim(), source: $("#keyword-source").value, target_count: Number($("#keyword-target").value) })
+        body: JSON.stringify({ seed_keyword: $("#seed-keyword").value.trim(), source: $("#keyword-source").value, target_count: Number($("#keyword-target").value), folder_id: $("#keyword-folder").value || null })
       });
       renderKeywordJob(); scheduleJobPoll(); toast("关键词采集任务已开始");
     } catch (error) { $("#keyword-error").textContent = error.message; }
     finally { setBusy(button, false); }
+  }
+
+  async function createKeywordFolder() {
+    const accountId = $("#keyword-account").value;
+    if (!accountId) return toast("请先选择知乎账号", "error");
+    const name = window.prompt("请输入新文件夹名称");
+    if (!name?.trim()) return;
+    try {
+      const folder = await api(`/accounts/${accountId}/keyword-folders`, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      await loadKeywordData(true);
+      $("#keyword-folder").value = folder.id;
+      toast("关键词文件夹已创建");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function renameKeywordFolder() {
+    const accountId = $("#keyword-account").value;
+    const folderId = $("#folder-filter").value;
+    const folder = state.keywordFolders.find((item) => item.id === folderId);
+    if (!folder) return;
+    const name = window.prompt("请输入新的文件夹名称", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+    try {
+      await api(`/accounts/${accountId}/keyword-folders/${folderId}`, { method: "PUT", body: JSON.stringify({ name: name.trim() }) });
+      await loadKeywordData(true);
+      toast("文件夹已重命名");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteKeywordFolder() {
+    const accountId = $("#keyword-account").value;
+    const folderId = $("#folder-filter").value;
+    const folder = state.keywordFolders.find((item) => item.id === folderId);
+    if (!folder || !window.confirm(`删除文件夹“${folder.name}”？其中的关键词会保留并移到未归档。`)) return;
+    try {
+      await api(`/accounts/${accountId}/keyword-folders/${folderId}`, { method: "DELETE" });
+      $("#folder-filter").value = "all";
+      await loadKeywordData(true);
+      toast("文件夹已删除，关键词已保留");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function moveSelectedKeywords() {
+    const ids = [...state.selectedKeywords];
+    if (!ids.length) return;
+    try {
+      const result = await api(`/accounts/${$("#keyword-account").value}/keywords/folder`, { method: "PATCH", body: JSON.stringify({ keyword_ids: ids, folder_id: $("#keyword-move-folder").value || null }) });
+      state.selectedKeywords.clear();
+      await loadKeywordData(true);
+      toast(`已移动 ${result.affected_count} 个关键词`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteSelectedKeywords() {
+    const ids = [...state.selectedKeywords];
+    if (!ids.length || !window.confirm(`确定删除选中的 ${ids.length} 个关键词吗？`)) return;
+    try {
+      const result = await api(`/accounts/${$("#keyword-account").value}/keywords/bulk-delete`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
+      state.selectedKeywords.clear();
+      await loadKeywordData(true);
+      toast(`已删除 ${result.affected_count} 个关键词`);
+    } catch (error) { toast(error.message, "error"); }
   }
 
   function navigate(page) {
@@ -366,8 +474,19 @@
     $("#account-form").addEventListener("submit", createAccount);
     $("#account-search").addEventListener("input", renderAccounts);
     $("#keyword-form").addEventListener("submit", startKeywordJob);
-    $("#keyword-account").addEventListener("change", () => loadKeywordData(true));
+    $("#keyword-account").addEventListener("change", () => { $("#folder-filter").value = "all"; state.selectedKeywords.clear(); loadKeywordData(true); });
     $("#keyword-refresh").addEventListener("click", () => loadKeywordData());
+    $("#folder-filter").addEventListener("change", () => { state.selectedKeywords.clear(); loadKeywordData(true); });
+    $("#folder-create").addEventListener("click", createKeywordFolder);
+    $("#folder-quick-create").addEventListener("click", createKeywordFolder);
+    $("#folder-rename").addEventListener("click", renameKeywordFolder);
+    $("#folder-delete").addEventListener("click", deleteKeywordFolder);
+    $("#keyword-select-all").addEventListener("change", (event) => {
+      (state.keywords.items || []).forEach((item) => event.currentTarget.checked ? state.selectedKeywords.add(item.id) : state.selectedKeywords.delete(item.id));
+      renderKeywords();
+    });
+    $("#keyword-move").addEventListener("click", moveSelectedKeywords);
+    $("#keyword-delete").addEventListener("click", deleteSelectedKeywords);
     $("#dialog-close").addEventListener("click", closeAccountDialog);
     $("#dialog-cancel").addEventListener("click", closeAccountDialog);
     $("#account-dialog").addEventListener("click", (event) => { if (event.target.id === "account-dialog") closeAccountDialog(); });

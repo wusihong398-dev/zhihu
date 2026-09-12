@@ -13,7 +13,7 @@
 
 ## 当前版本
 
-`v0.3.0`：增加 AI 平台加密配置与连接测试；增加按账号隔离的百度/谷歌真实网页关键词采集、进度和关键词库。
+`v0.4.0`：关键词采集按搜索引擎独立扩展，增加请求限速、验证识别和同搜索引擎联想词兜底；关键词库支持自定义文件夹、采集目标文件夹、单选/全选、批量移动和批量删除。
 
 ## 快速启动
 
@@ -41,6 +41,10 @@ bash scripts/bootstrap_server.sh
 - `POST /api/accounts/{account_id}/keyword-jobs`：启动关键词采集任务。
 - `GET /api/accounts/{account_id}/keyword-jobs/latest`：查询采集进度。
 - `GET /api/accounts/{account_id}/keywords`：读取该账号独立关键词库。
+- `GET/POST /api/accounts/{account_id}/keyword-folders`：查询或新建关键词文件夹。
+- `PUT/DELETE /api/accounts/{account_id}/keyword-folders/{folder_id}`：重命名或删除文件夹（删除文件夹时保留关键词）。
+- `PATCH /api/accounts/{account_id}/keywords/folder`：单个或批量移动关键词。
+- `POST /api/accounts/{account_id}/keywords/bulk-delete`：单个或批量删除关键词。
 
 除健康检查、版本和登录外，业务接口均要求管理员 Bearer Token。
 

@@ -1,7 +1,12 @@
+import httpx
+
 from app.services.keyword_collector import (
+    is_verification_page,
     normalize_keyword,
     parse_baidu_related,
+    parse_baidu_suggestions,
     parse_google_related,
+    parse_google_suggestions,
 )
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 
@@ -30,3 +35,23 @@ def test_google_related_parser() -> None:
     </div>
     """
     assert parse_google_related(html) == ["AI写作", "AI文章生成"]
+
+
+def test_google_related_uses_query_when_link_has_no_text() -> None:
+    html = '<div id="botstuff"><a href="/search?q=脱发怎么办"></a></div>'
+    assert parse_google_related(html) == ["脱发怎么办"]
+
+
+def test_search_suggestion_parsers() -> None:
+    baidu = 'window.baidu.sug({"q":"脱发","p":false,"s":["脱发原因","脱发怎么办"]});'
+    google = '["脱发", ["脱发原因", "脱发怎么办"]]'
+    assert parse_baidu_suggestions(baidu) == ["脱发原因", "脱发怎么办"]
+    assert parse_google_suggestions(google) == ["脱发原因", "脱发怎么办"]
+
+
+def test_verification_page_detection() -> None:
+    request = httpx.Request("GET", "https://www.google.com/sorry/index")
+    response = httpx.Response(
+        200, text="Our systems have detected unusual traffic", request=request
+    )
+    assert is_verification_page("google", response)
