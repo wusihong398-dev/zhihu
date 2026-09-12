@@ -13,7 +13,7 @@
 
 ## 当前版本
 
-`v0.5.0`：搭建完整产品功能导航和页面骨架；新增文章列表页面；关键词库固定每页 100 条并支持翻页。已完成模块继续可用，待开发模块明确标记“功能待填充”。
+`v0.6.0`：推广商品库正式可用。商品按知乎账号独立保存，支持新增、编辑、删除、搜索、启用/停用，并可维护商品分类、简介、核心卖点、目标人群、推广链接、内容要求和禁用表述。
 
 ## 快速启动
 
@@ -45,6 +45,8 @@ bash scripts/bootstrap_server.sh
 - `PUT/DELETE /api/accounts/{account_id}/keyword-folders/{folder_id}`：重命名或删除文件夹（删除文件夹时保留关键词）。
 - `PATCH /api/accounts/{account_id}/keywords/folder`：单个或批量移动关键词。
 - `POST /api/accounts/{account_id}/keywords/bulk-delete`：单个或批量删除关键词。
+- `GET/POST /api/accounts/{account_id}/products`：查询或新增该账号的推广商品。
+- `GET/PATCH/DELETE /api/accounts/{account_id}/products/{product_id}`：读取、编辑或删除推广商品。
 
 除健康检查、版本和登录外，业务接口均要求管理员 Bearer Token。
 

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -113,6 +113,7 @@
     renderOverview();
     renderAccounts();
     renderKeywordAccountOptions();
+    renderProductAccountOptions();
   }
 
   async function loadAccounts(silent = false) {
@@ -179,6 +180,137 @@
     } finally {
       setBusy(submit, false);
     }
+  }
+
+  function renderProductAccountOptions() {
+    const select = $("#product-account");
+    const formSelect = $("#product-form-account");
+    const previous = select.value;
+    const options = state.accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.display_name)}</option>`).join("");
+    select.innerHTML = `<option value="">请先选择账号</option>${options}`;
+    formSelect.innerHTML = `<option value="">请选择账号</option>${options}`;
+    if (state.accounts.some((account) => account.id === previous)) select.value = previous;
+    else if (state.accounts.length) select.value = state.accounts[0].id;
+  }
+
+  function productCard(product) {
+    const points = product.selling_points.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
+    const details = points.length ? points.map((point) => `<li>${escapeHtml(point)}</li>`).join("") : `<li>${escapeHtml(product.description || "尚未填写商品卖点")}</li>`;
+    const link = product.promotion_url
+      ? `<a href="${escapeHtml(product.promotion_url)}" target="_blank" rel="noopener noreferrer">打开推广链接 ↗</a>`
+      : `<span>尚未设置推广链接</span>`;
+    return `<article class="product-card" data-product-id="${product.id}">
+      <div class="product-card-head"><div><span>${escapeHtml(product.category || "未分类")}</span><h3>${escapeHtml(product.name)}</h3></div><button class="badge product-toggle ${product.enabled ? "" : "off"}" type="button">${product.enabled ? "已启用" : "已停用"}</button></div>
+      <p class="product-description">${escapeHtml(product.description || "暂无商品简介")}</p>
+      <div class="product-card-section"><strong>核心卖点</strong><ul>${details}</ul></div>
+      <div class="product-audience"><span>目标人群</span><p>${escapeHtml(product.target_audience || "尚未设置")}</p></div>
+      <div class="product-card-foot">${link}<div><button class="button button-ghost product-edit" type="button">编辑</button><button class="button button-ghost danger-text product-delete" type="button">删除</button></div></div>
+    </article>`;
+  }
+
+  function renderProducts() {
+    const query = $("#product-search").value.trim().toLowerCase();
+    const filtered = state.products.filter((product) => `${product.name} ${product.category} ${product.description} ${product.selling_points}`.toLowerCase().includes(query));
+    $("#product-count").textContent = query ? `找到 ${filtered.length} / ${state.products.length} 个商品` : `共 ${state.products.length} 个商品`;
+    $("#product-list").innerHTML = filtered.map(productCard).join("");
+    $("#product-list").hidden = filtered.length === 0;
+    $("#product-empty").hidden = filtered.length !== 0;
+    $("#product-empty h3").textContent = query ? "没有匹配的推广商品" : $("#product-account").value ? "还没有推广商品" : "请先选择知乎账号";
+    $("#product-empty p").textContent = query ? "请更换搜索词，或添加新的推广商品。" : $("#product-account").value ? "添加该账号需要推广的商品资料，后续生成内容时即可直接选择。" : "推广商品按账号独立保存，请先选择一个知乎账号。";
+    $$(".product-edit", $("#product-list")).forEach((button) => button.addEventListener("click", () => openProductDialog(state.products.find((product) => product.id === button.closest(".product-card").dataset.productId))));
+    $$(".product-delete", $("#product-list")).forEach((button) => button.addEventListener("click", () => deleteProduct(button.closest(".product-card").dataset.productId)));
+    $$(".product-toggle", $("#product-list")).forEach((button) => button.addEventListener("click", () => toggleProduct(button.closest(".product-card").dataset.productId)));
+  }
+
+  async function loadProducts(silent = false) {
+    const accountId = $("#product-account").value;
+    if (!accountId) {
+      state.products = [];
+      renderProducts();
+      return;
+    }
+    try {
+      const result = await api(`/accounts/${accountId}/products?limit=500`);
+      state.products = result.items;
+      renderProducts();
+      if (!silent) toast("推广商品已刷新");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function openProductDialog(product = null) {
+    if (!state.accounts.length) return toast("请先添加知乎账号", "error");
+    $("#product-form").reset();
+    state.editingProductId = product?.id || null;
+    $("#product-dialog-title").textContent = product ? "编辑推广商品" : "添加推广商品";
+    $("#product-form-account").value = product?.account_id || $("#product-account").value || state.accounts[0].id;
+    $("#product-form-account").disabled = Boolean(product);
+    $("#product-name").value = product?.name || "";
+    $("#product-category").value = product?.category || "";
+    $("#product-description").value = product?.description || "";
+    $("#product-selling-points").value = product?.selling_points || "";
+    $("#product-target-audience").value = product?.target_audience || "";
+    $("#product-url").value = product?.promotion_url || "";
+    $("#product-requirements").value = product?.content_requirements || "";
+    $("#product-forbidden").value = product?.forbidden_terms || "";
+    $("#product-enabled").checked = product ? product.enabled : true;
+    $("#product-error").textContent = "";
+    $("#product-dialog").hidden = false;
+    window.setTimeout(() => $("#product-name").focus(), 0);
+  }
+
+  function closeProductDialog() {
+    $("#product-dialog").hidden = true;
+    state.editingProductId = null;
+  }
+
+  async function saveProduct(event) {
+    event.preventDefault();
+    const submit = $("#product-submit");
+    const accountId = $("#product-form-account").value;
+    if (!accountId) return $("#product-error").textContent = "请选择知乎账号";
+    const payload = {
+      name: $("#product-name").value.trim(),
+      category: $("#product-category").value.trim(),
+      description: $("#product-description").value.trim(),
+      selling_points: $("#product-selling-points").value.trim(),
+      target_audience: $("#product-target-audience").value.trim(),
+      promotion_url: $("#product-url").value.trim(),
+      content_requirements: $("#product-requirements").value.trim(),
+      forbidden_terms: $("#product-forbidden").value.trim(),
+      enabled: $("#product-enabled").checked
+    };
+    setBusy(submit, true, "保存中…");
+    $("#product-error").textContent = "";
+    try {
+      const wasEditing = Boolean(state.editingProductId);
+      if (wasEditing) await api(`/accounts/${accountId}/products/${state.editingProductId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      else await api(`/accounts/${accountId}/products`, { method: "POST", body: JSON.stringify(payload) });
+      $("#product-account").value = accountId;
+      closeProductDialog();
+      await loadProducts(true);
+      toast(wasEditing ? "推广商品已更新" : "推广商品已添加");
+    } catch (error) { $("#product-error").textContent = error.message; }
+    finally { setBusy(submit, false); }
+  }
+
+  async function toggleProduct(productId) {
+    const product = state.products.find((item) => item.id === productId);
+    if (!product) return;
+    try {
+      await api(`/accounts/${product.account_id}/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !product.enabled }) });
+      await loadProducts(true);
+      toast(product.enabled ? "商品已停用" : "商品已启用");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteProduct(productId) {
+    const product = state.products.find((item) => item.id === productId);
+    if (!product || !window.confirm(`确定删除推广商品“${product.name}”吗？`)) return;
+    try {
+      await api(`/accounts/${product.account_id}/products/${product.id}`, { method: "DELETE" });
+      await loadProducts(true);
+      toast("推广商品已删除");
+    } catch (error) { toast(error.message, "error"); }
   }
 
   function providerCard(provider) {
@@ -459,6 +591,7 @@
     $(".sidebar").classList.remove("open");
     if (page === "ai" && !state.providers.length) loadProviders(true);
     if (page === "keywords") loadKeywordData(true);
+    if (page === "products") loadProducts(true);
   }
 
   async function login(event) {
@@ -491,6 +624,14 @@
     $("#refresh-button").addEventListener("click", () => loadAccounts());
     $("#account-form").addEventListener("submit", createAccount);
     $("#account-search").addEventListener("input", renderAccounts);
+    $("#product-account").addEventListener("change", () => { $("#product-search").value = ""; loadProducts(true); });
+    $("#product-search").addEventListener("input", renderProducts);
+    $("#product-add").addEventListener("click", () => openProductDialog());
+    $("#product-empty-add").addEventListener("click", () => openProductDialog());
+    $("#product-form").addEventListener("submit", saveProduct);
+    $("#product-dialog-close").addEventListener("click", closeProductDialog);
+    $("#product-dialog-cancel").addEventListener("click", closeProductDialog);
+    $("#product-dialog").addEventListener("click", (event) => { if (event.target.id === "product-dialog") closeProductDialog(); });
     $("#keyword-form").addEventListener("submit", startKeywordJob);
     $("#keyword-account").addEventListener("change", () => { $("#folder-filter").value = "all"; state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); });
     $("#keyword-refresh").addEventListener("click", () => loadKeywordData());
@@ -514,7 +655,7 @@
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     $$('[data-page-link]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageLink)));
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeAccountDialog(); });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); } });
 
     try {
       const version = await api("/version");

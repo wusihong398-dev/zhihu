@@ -7,7 +7,7 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.5.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.6.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -187,8 +187,16 @@
       </div>
 
       <div id="products-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">账号独立推广资料</span><h1>推广商品</h1><p>为不同知乎账号保存商品名称、卖点、目标人群、固定链接和内容禁区，生成文章与回答时自动调用。</p></div><button class="button button-primary" disabled>＋ 添加商品</button></section>
-        <section class="panel module-placeholder"><span class="module-icon">▣</span><span class="badge off">功能待填充</span><h2>商品资料库</h2><p>计划包含商品文件夹、商品详情、推广角度、落地页、禁用表述，以及账号与商品的绑定关系。</p><div class="feature-tags"><span>商品分组</span><span>卖点管理</span><span>账号绑定</span><span>推广链接</span><span>合规规则</span></div></section>
+        <section class="page-heading"><div><span class="eyebrow">账号独立推广资料</span><h1>推广商品</h1><p>为不同知乎账号保存商品名称、卖点、目标人群、固定链接和内容禁区，生成文章与回答时自动调用。</p></div><button id="product-add" class="button button-primary">＋ 添加商品</button></section>
+        <section class="panel product-panel">
+          <div class="product-toolbar">
+            <div><label for="product-account">知乎账号</label><select id="product-account"><option value="">请先选择账号</option></select></div>
+            <label class="search-box">⌕<input id="product-search" placeholder="搜索商品、分类或卖点"></label>
+            <span id="product-count">共 0 个商品</span>
+          </div>
+          <div id="product-list" class="product-grid"></div>
+          <div id="product-empty" class="empty-state"><span>▣</span><h3>还没有推广商品</h3><p>先选择知乎账号，再添加该账号需要推广的商品资料。</p><button id="product-empty-add" class="button button-primary">添加商品</button></div>
+        </section>
       </div>
 
       <div id="article-generate-page" class="page">
@@ -267,6 +275,35 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.5.0" defer></script>
+  <div id="product-dialog" class="dialog-backdrop" hidden>
+    <section class="dialog product-dialog" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title">
+      <div class="dialog-head"><div><span class="eyebrow">账号独立商品资料</span><h2 id="product-dialog-title">添加推广商品</h2></div><button id="product-dialog-close" class="icon-button" aria-label="关闭">×</button></div>
+      <form id="product-form">
+        <div class="field-grid">
+          <div><label for="product-form-account">知乎账号</label><select id="product-form-account" required><option value="">请选择账号</option></select></div>
+          <div><label for="product-category">商品分类</label><input id="product-category" maxlength="100" placeholder="例如：防脱护理"></div>
+        </div>
+        <label for="product-name">商品名称</label>
+        <input id="product-name" maxlength="120" placeholder="例如：某某防脱洗发水" required>
+        <label for="product-description">商品简介</label>
+        <textarea id="product-description" maxlength="10000" rows="3" placeholder="说明商品是什么、解决什么问题"></textarea>
+        <div class="field-grid">
+          <div><label for="product-selling-points">核心卖点</label><textarea id="product-selling-points" maxlength="10000" rows="5" placeholder="每行一个卖点，AI 将围绕这些内容生成"></textarea></div>
+          <div><label for="product-target-audience">目标人群</label><textarea id="product-target-audience" maxlength="10000" rows="5" placeholder="例如：经常熬夜、压力大、有脱发困扰的人群"></textarea></div>
+        </div>
+        <label for="product-url">推广链接</label>
+        <input id="product-url" type="url" maxlength="2048" placeholder="https://...">
+        <div class="field-grid">
+          <div><label for="product-requirements">内容要求</label><textarea id="product-requirements" maxlength="10000" rows="4" placeholder="语气、植入方式、必须提及的内容"></textarea></div>
+          <div><label for="product-forbidden">禁用表述</label><textarea id="product-forbidden" maxlength="10000" rows="4" placeholder="每行一个禁用词或禁止承诺"></textarea></div>
+        </div>
+        <label class="product-enabled"><input id="product-enabled" type="checkbox" checked> 启用此商品，可供文章和回答生成使用</label>
+        <p id="product-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="product-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="product-submit" class="button button-primary" type="submit">保存商品</button></div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/assets/app.js?v=0.6.0" defer></script>
 </body>
 </html>

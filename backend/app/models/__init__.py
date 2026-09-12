@@ -11,6 +11,7 @@ from app.models.keyword_job import (
     KeywordJobSource,
     KeywordJobStatus,
 )
+from app.models.product import PromotedProduct
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "KeywordJobSource",
     "KeywordJobStatus",
     "KeywordSource",
+    "PromotedProduct",
     "User",
     "UserRole",
     "ZhihuAccount",
