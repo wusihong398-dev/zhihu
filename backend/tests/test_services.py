@@ -19,6 +19,7 @@ from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 from app.services.zhihu_login import has_zhihu_auth_cookie
 from app.services.zhihu_publisher import (
     ZhihuPublishError,
+    ZhihuPublicVerificationUnavailable,
     _article_id_from_url,
     _public_article_url,
     _verify_public_article,
@@ -139,6 +140,24 @@ def test_public_article_verification_rejects_missing_draft() -> None:
                     "并未公开的文章",
                     client=client,
                     attempts=1,
+                    wait_seconds=0,
+                )
+
+    asyncio.run(verify())
+
+
+def test_public_article_verification_falls_back_when_api_is_blocked() -> None:
+    async def verify() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, request=request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(ZhihuPublicVerificationUnavailable, match="公开网页"):
+                await _verify_public_article(
+                    "2082171778986664628",
+                    "等待网页核验的文章",
+                    client=client,
+                    attempts=3,
                     wait_seconds=0,
                 )
 

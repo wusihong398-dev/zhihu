@@ -22,6 +22,10 @@ class ZhihuLoginRequired(ZhihuPublishError):
     pass
 
 
+class ZhihuPublicVerificationUnavailable(ZhihuPublishError):
+    pass
+
+
 _ARTICLE_ID_RE = re.compile(r"^/p/(?P<article_id>\d+)(?:/edit)?/?$")
 
 
@@ -83,6 +87,7 @@ async def _verify_public_article(
             },
         )
     last_reason = "知乎公开接口没有返回文章"
+    verification_unavailable = False
     try:
         for attempt in range(max(attempts, 1)):
             try:
@@ -104,23 +109,91 @@ async def _verify_public_article(
                 elif response.status_code == 404:
                     last_reason = "公开文章不存在，知乎可能只保存了编辑草稿"
                 elif response.status_code in {401, 403, 429}:
+                    verification_unavailable = True
                     last_reason = (
                         f"知乎公开核验被限制（HTTP {response.status_code}），"
-                        "无法确认文章已发布"
+                        "改用公开网页核验"
                     )
+                    break
                 else:
+                    verification_unavailable = True
                     last_reason = (
                         f"知乎公开核验返回 HTTP {response.status_code}，"
-                        "无法确认文章已发布"
+                        "改用公开网页核验"
                     )
             except (httpx.HTTPError, ValueError):
+                verification_unavailable = True
                 last_reason = "连接知乎公开接口失败，无法确认文章已发布"
             if attempt + 1 < max(attempts, 1):
                 await asyncio.sleep(wait_seconds)
     finally:
         if owns_client:
             await client.aclose()
-    raise ZhihuPublishError(last_reason)
+    error_type = (
+        ZhihuPublicVerificationUnavailable
+        if verification_unavailable
+        else ZhihuPublishError
+    )
+    raise error_type(last_reason)
+
+
+async def _verify_public_article_page(
+    playwright: Any, article_id: str, expected_title: str
+) -> str:
+    """Fallback verification in a clean browser when Zhihu blocks its API."""
+    public_url = f"https://zhuanlan.zhihu.com/p/{article_id}"
+    browser = None
+    context = None
+    try:
+        browser = await playwright.chromium.launch(
+            executable_path=settings.chromium_executable,
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        context = await browser.new_context(
+            locale="zh-CN",
+            viewport={"width": 1280, "height": 900},
+        )
+        page = await context.new_page()
+        response = await page.goto(
+            public_url,
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
+        await page.wait_for_timeout(2500)
+        if response is not None and response.status == 404:
+            raise ZhihuPublishError("知乎公开文章不存在，可能只保存了编辑草稿")
+        if _public_article_url(page.url) != public_url:
+            raise ZhihuPublishError("知乎公开文章地址未生效，可能仍处于编辑草稿状态")
+        body_text = await page.locator("body").inner_text(timeout=5000)
+        missing_markers = (
+            "你似乎来到了没有知识存在的荒原",
+            "内容不存在",
+            "页面不存在",
+        )
+        if any(marker in body_text for marker in missing_markers):
+            raise ZhihuPublishError("知乎公开页面显示内容不存在，文章没有发布成功")
+        if _normalized_title(expected_title) not in _normalized_title(body_text):
+            verification_markers = ("安全验证", "异常流量", "验证码")
+            if any(marker in body_text for marker in verification_markers):
+                raise ZhihuPublishError("知乎公开页面触发安全验证，无法确认发布成功")
+            raise ZhihuPublishError("知乎公开页面未显示文章标题，无法确认发布成功")
+        return public_url
+    except ZhihuPublishError:
+        raise
+    except Exception as exc:
+        raise ZhihuPublishError("打开知乎公开文章页面失败，无法确认发布成功") from exc
+    finally:
+        if context is not None:
+            try:
+                await context.close()
+            except Exception:
+                pass
+        if browser is not None:
+            try:
+                await browser.close()
+            except Exception:
+                pass
 
 
 async def _first_visible(page: Any, selectors: tuple[str, ...]) -> Any:
@@ -252,7 +325,12 @@ async def publish_article_to_zhihu(
             raise ZhihuPublishError(
                 "知乎未返回文章编号，可能需要选择话题或完成人工验证"
             )
-        return await _verify_public_article(article_id, article.title)
+        try:
+            return await _verify_public_article(article_id, article.title)
+        except ZhihuPublicVerificationUnavailable:
+            return await _verify_public_article_page(
+                playwright, article_id, article.title
+            )
     except (ZhihuLoginRequired, ZhihuPublishError):
         if context is not None and context.pages:
             try:

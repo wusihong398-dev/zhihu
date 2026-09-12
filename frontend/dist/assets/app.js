@@ -806,10 +806,14 @@
     const filterValue = filter.value;
     const options = state.accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.display_name)}</option>`).join("");
     generate.innerHTML = `<option value="">请选择账号</option>${options}`;
-    filter.innerHTML = `<option value="">全部知乎账号</option>${options}`;
+    filter.innerHTML = state.accounts.length
+      ? options
+      : `<option value="">暂无知乎账号</option>`;
+    filter.disabled = state.accounts.length === 0;
     if (state.accounts.some((account) => account.id === generateValue)) generate.value = generateValue;
     else if (state.accounts.length === 1) generate.value = state.accounts[0].id;
     if (state.accounts.some((account) => account.id === filterValue)) filter.value = filterValue;
+    else if (state.accounts.length) filter.value = state.accounts[0].id;
   }
 
   function updateArticleGenerateEstimate() {
@@ -1145,9 +1149,13 @@
     return { draft: "草稿", ready: "待发布", published: "已发布", failed: "失败" }[value] || value;
   }
 
+  function selectedArticleStatus() {
+    return $(".article-status-tab.active")?.dataset.status || "draft";
+  }
+
   function articleActionButtons(item) {
     const publishing = Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
-    const publish = item.status !== "published" ? `<button class="button button-primary article-publish" type="button" ${publishing ? "disabled" : ""}>发布到知乎</button>` : "";
+    const publish = item.status !== "published" ? `<button class="button button-primary article-publish" type="button" ${publishing ? "disabled" : ""}>发布</button>` : "";
     const view = item.status === "published" && item.published_url ? `<a class="button button-ghost article-view" href="${escapeHtml(item.published_url)}" target="_blank" rel="noopener noreferrer">查看</a>` : "";
     return `${publish}${view}<button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button>`;
   }
@@ -1166,9 +1174,19 @@
 
   function renderArticles() {
     const items = state.articles.items || [];
-    $("#article-total").textContent = `共 ${state.articles.total || 0} 篇`;
-    $("#article-list").innerHTML = items.map((item) => `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong><small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small></label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions">${articleActionButtons(item)}</div></div>`).join("");
+    const accountId = $("#article-account-filter").value;
+    const account = state.accounts.find((item) => item.id === accountId);
+    const category = { draft: "草稿箱", ready: "待发布", published: "已发布", failed: "发布失败" }[selectedArticleStatus()];
+    $("#article-total").textContent = `${account ? account.display_name : "当前账号"} · ${category} ${state.articles.total || 0} 篇`;
+    $("#article-list").innerHTML = items.map((item) => {
+      const failure = item.status === "failed"
+        ? `<span class="article-failure-reason"><b>失败原因：</b>${escapeHtml(item.error_message || "系统没有返回具体原因，请重新发布后查看")}</span>`
+        : `<small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small>`;
+      return `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong>${failure}</label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions">${articleActionButtons(item)}</div></div>`;
+    }).join("");
     $("#article-empty").hidden = items.length !== 0;
+    $("#article-empty h3").textContent = account ? "该账号还没有文章" : "请先添加知乎账号";
+    $("#article-empty p").textContent = account ? `“${account.display_name}”暂时没有符合当前筛选条件的文章。` : "文章将按知乎账号独立归类，请先添加一个知乎账号。";
     $$(".article-title-cell input", $("#article-list")).forEach((input) => input.addEventListener("change", (event) => {
       const id = event.currentTarget.closest(".article-row").dataset.articleId;
       if (event.currentTarget.checked) state.selectedArticles.add(id); else state.selectedArticles.delete(id);
@@ -1188,10 +1206,16 @@
   async function loadArticles(silent = false) {
     const params = new URLSearchParams({ limit: state.articlePageSize, offset: (state.articlePage - 1) * state.articlePageSize });
     const accountId = $("#article-account-filter").value;
-    const articleStatus = $("#article-status-filter").value;
+    if (!accountId) {
+      state.articles = { items: [], total: 0 };
+      state.selectedArticles.clear();
+      renderArticles();
+      return;
+    }
+    const articleStatus = selectedArticleStatus();
     const query = $("#article-search").value.trim();
-    if (accountId) params.set("account_id", accountId);
-    if (articleStatus) params.set("status", articleStatus);
+    params.set("account_id", accountId);
+    params.set("status", articleStatus);
     if (query) params.set("q", query);
     try {
       const articles = await api(`/articles?${params.toString()}`);
@@ -1399,7 +1423,12 @@
     $("#article-generation-resume").addEventListener("click", () => controlArticleJob("generate", "resume"));
     $("#article-generation-stop").addEventListener("click", () => controlArticleJob("generate", "stop"));
     $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
-    $("#article-status-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
+    $$(".article-status-tab").forEach((button) => button.addEventListener("click", () => {
+      $$(".article-status-tab").forEach((item) => item.classList.toggle("active", item === button));
+      state.articlePage = 1;
+      state.selectedArticles.clear();
+      loadArticles(true);
+    }));
     $("#article-search").addEventListener("input", () => { window.clearTimeout(state.articleSearchTimer); state.articleSearchTimer = window.setTimeout(() => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); }, 300); });
     $("#article-select-all").addEventListener("change", (event) => { (state.articles.items || []).forEach((item) => event.currentTarget.checked ? state.selectedArticles.add(item.id) : state.selectedArticles.delete(item.id)); updateArticleSelection(); renderArticles(); });
     $("#article-mark-ready").addEventListener("click", bulkArticleStatus);
