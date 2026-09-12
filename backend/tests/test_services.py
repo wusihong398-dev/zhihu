@@ -21,7 +21,11 @@ from app.services.zhihu_publisher import (
     ZhihuPublishError,
     ZhihuPublicVerificationUnavailable,
     _article_id_from_url,
+    _is_publish_response,
+    _publish_article_id,
+    _publish_error_message,
     _public_article_url,
+    _read_publish_response,
     _verify_public_article,
 )
 from app.api.articles import _job_read
@@ -104,6 +108,53 @@ def test_zhihu_public_url_does_not_accept_editor_url() -> None:
     assert _public_article_url(f"{public}?utm_source=test") == public
     assert _public_article_url(editor) is None
     assert _public_article_url("https://example.com/p/2082171778986664628") is None
+
+
+def test_zhihu_publish_response_detection_accepts_old_and_new_endpoints() -> None:
+    new_response = SimpleNamespace(
+        url="https://www.zhihu.com/api/v4/content/publish",
+        request=SimpleNamespace(method="POST"),
+    )
+    old_response = SimpleNamespace(
+        url="https://zhuanlan.zhihu.com/api/articles/123/publish",
+        request=SimpleNamespace(method="POST"),
+    )
+    public_lookup = SimpleNamespace(
+        url="https://www.zhihu.com/api/v4/articles/123",
+        request=SimpleNamespace(method="GET"),
+    )
+    assert _is_publish_response(new_response)
+    assert _is_publish_response(old_response)
+    assert not _is_publish_response(public_lookup)
+
+
+def test_zhihu_publish_payload_extracts_id_and_error() -> None:
+    payload = {"data": {"result": '{"publish":{"id":"2082171778986664628"}}'}}
+    assert _publish_article_id(payload) == "2082171778986664628"
+    assert _publish_error_message({"error": {"message": "请选择文章话题"}}) == (
+        "请选择文章话题"
+    )
+
+
+def test_zhihu_publish_response_preserves_success_and_failure_details() -> None:
+    class FakeResponse:
+        def __init__(self, status: int, body: str) -> None:
+            self.status = status
+            self.body = body
+
+        async def text(self) -> str:
+            return self.body
+
+    success = asyncio.run(
+        _read_publish_response(FakeResponse(200, '{"message":"success"}'))
+    )
+    failure = asyncio.run(
+        _read_publish_response(
+            FakeResponse(400, '{"error":{"message":"请选择文章话题"}}')
+        )
+    )
+    assert success == (None, None)
+    assert failure == (None, "知乎正式发布接口拒绝（HTTP 400）：请选择文章话题")
 
 
 def test_public_article_verification_requires_matching_public_record() -> None:

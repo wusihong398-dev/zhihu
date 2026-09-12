@@ -1,5 +1,6 @@
 import asyncio
 import html
+import json
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -27,6 +28,96 @@ class ZhihuPublicVerificationUnavailable(ZhihuPublishError):
 
 
 _ARTICLE_ID_RE = re.compile(r"^/p/(?P<article_id>\d+)(?:/edit)?/?$")
+_PUBLISH_RESPONSE_PATHS = (
+    "/api/v4/content/publish",
+    "/api/articles/",
+)
+
+
+def _is_publish_response(response: Any) -> bool:
+    """Return whether a browser response belongs to a formal publish request."""
+    try:
+        method = response.request.method.upper()
+        url = response.url
+    except Exception:
+        return False
+    if method != "POST":
+        return False
+    return _PUBLISH_RESPONSE_PATHS[0] in url or (
+        _PUBLISH_RESPONSE_PATHS[1] in url and "/publish" in url
+    )
+
+
+def _publish_article_id(payload: Any) -> str | None:
+    """Extract the public article id from Zhihu's old and new publish payloads."""
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data")
+    if isinstance(data, dict):
+        result = data.get("result")
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except (TypeError, ValueError):
+                result = None
+        if isinstance(result, dict):
+            published = result.get("publish")
+            if isinstance(published, dict) and published.get("id"):
+                return str(published["id"])
+        published = data.get("publish")
+        if isinstance(published, dict) and published.get("id"):
+            return str(published["id"])
+        if data.get("id"):
+            return str(data["id"])
+    published = payload.get("publish")
+    if isinstance(published, dict) and published.get("id"):
+        return str(published["id"])
+    if payload.get("id"):
+        return str(payload["id"])
+    return None
+
+
+def _publish_error_message(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("message", "msg", "error_message", "error_description"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:240]
+    error = payload.get("error")
+    if isinstance(error, str) and error.strip():
+        return " ".join(error.split())[:240]
+    if isinstance(error, dict):
+        return _publish_error_message(error)
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return _publish_error_message(data)
+    return None
+
+
+async def _read_publish_response(response: Any) -> tuple[str | None, str | None]:
+    """Return (public id, failure reason) without exposing raw response data."""
+    status = int(getattr(response, "status", 0) or 0)
+    payload = None
+    response_text = ""
+    try:
+        response_text = await response.text()
+        payload = json.loads(response_text) if response_text else None
+    except Exception:
+        payload = None
+    article_id = _publish_article_id(payload)
+    reason = _publish_error_message(payload)
+    if status >= 400:
+        suffix = f"：{reason}" if reason else ""
+        return None, f"知乎正式发布接口拒绝（HTTP {status}）{suffix}"
+    reported_failure = isinstance(payload, dict) and (
+        payload.get("success") is False
+        or "error" in payload
+        or payload.get("code") not in (None, 0, 200, "0", "200")
+    )
+    if reported_failure and reason:
+        return None, f"知乎正式发布未通过：{reason}"
+    return article_id, None
 
 
 def _article_id_from_url(url: str) -> str | None:
@@ -209,9 +300,152 @@ async def _first_visible(page: Any, selectors: tuple[str, ...]) -> Any:
     return None
 
 
-async def publish_article_to_zhihu(
-    account: ZhihuAccount, article: Article
-) -> str:
+async def _last_visible(page: Any, selector: str) -> Any:
+    """Return the last visible match; portals are normally appended to the DOM."""
+    try:
+        matches = page.locator(selector)
+        for index in range(min(await matches.count(), 30) - 1, -1, -1):
+            locator = matches.nth(index)
+            if await locator.is_visible(timeout=500):
+                return locator
+    except Exception:
+        pass
+    return None
+
+
+async def _publish_confirmation_button(page: Any) -> Any:
+    """Locate Zhihu's final confirmation across dialogs, popovers and portals."""
+    strong_labels = (
+        "确认发布",
+        "发布文章",
+        "立即发布",
+        "确定发布",
+        "确定",
+        "确认",
+    )
+    containers = (
+        "[role='dialog']",
+        "[aria-modal='true']",
+        "[class*='Modal']",
+        "[class*='Popover']",
+        "[class*='Publish']",
+        "[class*='Drawer']",
+    )
+    selectors: list[str] = []
+    for label in strong_labels:
+        for container in containers:
+            selectors.extend(
+                (
+                    f"{container} button:text-is('{label}')",
+                    f"{container} [role='button']:text-is('{label}')",
+                )
+            )
+        selectors.extend(
+            (
+                f"button:text-is('{label}')",
+                f"[role='button']:text-is('{label}')",
+            )
+        )
+    button = await _first_visible(page, tuple(selectors))
+    if button is not None:
+        return button
+
+    for container in containers:
+        for selector in (
+            f"{container} button:not([data-totod-initial-publish]):text-is('发布')",
+            f"{container} [role='button']:not([data-totod-initial-publish]):text-is('发布')",
+        ):
+            button = await _last_visible(page, selector)
+            if button is not None:
+                return button
+
+    # Some versions render the publish panel in a generic body portal without
+    # dialog semantics. The editor's first button is marked and excluded; the
+    # portal's final button is normally the last visible exact-text match.
+    for selector in (
+        "button:not([data-totod-initial-publish]):text-is('发布')",
+        "[role='button']:not([data-totod-initial-publish]):text-is('发布')",
+    ):
+        button = await _last_visible(page, selector)
+        if button is not None:
+            return button
+    return None
+
+
+async def _visible_publish_feedback(page: Any) -> str | None:
+    """Collect a concise validation/safety message shown by Zhihu."""
+    selectors = (
+        "[role='alert']",
+        "[class*='Toast']",
+        "[class*='Error']",
+        "[class*='warning']",
+        "[class*='Warning']",
+    )
+    for selector in selectors:
+        try:
+            matches = page.locator(selector)
+            for index in range(min(await matches.count(), 20) - 1, -1, -1):
+                locator = matches.nth(index)
+                if not await locator.is_visible(timeout=300):
+                    continue
+                value = " ".join((await locator.inner_text(timeout=1000)).split())
+                if value:
+                    return value[:240]
+        except Exception:
+            continue
+    try:
+        body_text = await page.locator("body").inner_text(timeout=2000)
+    except Exception:
+        return None
+    markers = (
+        "安全验证",
+        "完成验证",
+        "请选择话题",
+        "至少选择一个话题",
+        "发布失败",
+        "账号异常",
+        "内容违规",
+    )
+    for line in body_text.splitlines():
+        value = " ".join(line.split())
+        if value and any(marker in value for marker in markers):
+            return value[:240]
+    return None
+
+
+async def _finish_publish(
+    page: Any, publish_response: asyncio.Future[Any]
+) -> tuple[str | None, str | None]:
+    """Drive the final publish panel and observe Zhihu's authoritative response."""
+    for _ in range(12):
+        if publish_response.done():
+            break
+        if _public_article_url(page.url):
+            break
+        confirm = await _publish_confirmation_button(page)
+        if confirm is not None:
+            try:
+                if await confirm.is_enabled(timeout=500):
+                    await confirm.click(timeout=5000)
+            except Exception:
+                try:
+                    await confirm.click(timeout=5000, force=True)
+                except Exception:
+                    pass
+        try:
+            await asyncio.wait_for(asyncio.shield(publish_response), timeout=1.25)
+        except TimeoutError:
+            pass
+
+    if publish_response.done() and not publish_response.cancelled():
+        return await _read_publish_response(publish_response.result())
+    feedback = await _visible_publish_feedback(page)
+    if feedback:
+        return None, f"知乎发布页面提示：{feedback}"
+    return None, "未触发知乎正式发布接口，最终确认按钮没有生效"
+
+
+async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> str:
     root = account_storage_path(account.id, account.profile_key)
     screenshot_path = (
         root
@@ -280,6 +514,16 @@ async def publish_article_to_zhihu(
             await page.keyboard.insert_text(article.content)
         await page.wait_for_timeout(800)
 
+        publish_response: asyncio.Future[Any] = (
+            asyncio.get_running_loop().create_future()
+        )
+
+        def capture_publish_response(response: Any) -> None:
+            if _is_publish_response(response) and not publish_response.done():
+                publish_response.set_result(response)
+
+        page.on("response", capture_publish_response)
+
         publish_button = await _first_visible(
             page,
             (
@@ -289,34 +533,24 @@ async def publish_article_to_zhihu(
         )
         if publish_button is None:
             raise ZhihuPublishError("知乎创作页面结构发生变化，未找到发布按钮")
-        await publish_button.click(timeout=5000)
-        await page.wait_for_timeout(1200)
-
-        # Zhihu may show one or more publish-setting dialogs. Only click exact
-        # confirmation labels inside a dialog so the editor's original button is
-        # never mistaken for the final confirmation button.
-        for _ in range(3):
-            confirm = await _first_visible(
-                page,
-                (
-                    "[role='dialog'] button:text-is('确认发布')",
-                    "[role='dialog'] button:text-is('发布文章')",
-                    "[role='dialog'] button:text-is('发布')",
-                    "[class*='Modal'] button:text-is('确认发布')",
-                    "[class*='Modal'] button:text-is('发布文章')",
-                    "[class*='Modal'] button:text-is('发布')",
-                ),
+        try:
+            await publish_button.evaluate(
+                "element => element.setAttribute('data-totod-initial-publish', 'true')"
             )
-            if confirm is None:
-                break
-            await confirm.click(timeout=5000)
-            await page.wait_for_timeout(1200)
+        except Exception:
+            pass
+        await publish_button.click(timeout=5000)
+        api_article_id, publish_error = await _finish_publish(page, publish_response)
+        if publish_error:
+            raise ZhihuPublishError(publish_error)
 
         # An /edit URL only means that Zhihu allocated an editor draft. It is not
         # evidence that the article is public. Extract the id, then independently
         # verify it through the unauthenticated public article API.
-        article_id = None
+        article_id = api_article_id
         for _ in range(20):
+            if article_id:
+                break
             article_id = _article_id_from_url(page.url)
             if article_id:
                 break
