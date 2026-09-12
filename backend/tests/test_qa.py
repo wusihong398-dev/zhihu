@@ -13,6 +13,8 @@ ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
 
 
 def test_question_collection_answer_crud_and_daily_queue(monkeypatch) -> None:
+    current = {"user": ADMIN}
+
     async def fake_collect(account, keywords, target_count):
         assert keywords == ["防脱", "头发护理"]
         assert target_count == 20
@@ -30,9 +32,19 @@ def test_question_collection_answer_crud_and_daily_queue(monkeypatch) -> None:
 
     monkeypatch.setattr("app.api.qa.collect_zhihu_questions", fake_collect)
     monkeypatch.setattr("app.api.qa.start_answer_job", lambda job_id: None)
-    app.dependency_overrides[require_active_user] = lambda: ADMIN
+    app.dependency_overrides[require_active_user] = lambda: current["user"]
     try:
         with TestClient(app) as client:
+            operator = client.post(
+                "/api/users",
+                json={
+                    "username": f"qa_operator_{uuid.uuid4().hex[:8]}",
+                    "password": "test-password-123",
+                },
+            ).json()
+            current["user"] = SimpleNamespace(
+                id=uuid.UUID(operator["id"]), role=UserRole.user
+            )
             account = client.post(
                 "/api/accounts",
                 json={
