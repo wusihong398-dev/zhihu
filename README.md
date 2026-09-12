@@ -14,7 +14,7 @@
 
 ## 当前版本
 
-`v0.7.0`：升级为多系统用户版本。管理员可新增用户、设置使用期限、启用/停用及重置密码；普通用户只能访问自己的知乎账号、关键词、推广商品和 AI 平台配置。到期后自动禁止登录，续期后原有数据继续保留。
+`v0.8.0`：文章生成与文章列表已接入。用户可按知乎账号选择关键词文件夹、批量勾选关键词、绑定推广商品及已配置的 AI 模型，设置每个关键词篇数、字数范围和提示词后生成草稿。文章列表支持全部账号汇总、搜索、状态筛选、每页 100 篇、编辑、单删、批量删除及批量转为待发布；所有文章继续按系统用户和知乎账号隔离。
 
 ## 快速启动
 
@@ -51,6 +51,12 @@ bash scripts/bootstrap_server.sh
 - `POST /api/accounts/{account_id}/keywords/bulk-delete`：单个或批量删除关键词。
 - `GET/POST /api/accounts/{account_id}/products`：查询或新增该账号的推广商品。
 - `GET/PATCH/DELETE /api/accounts/{account_id}/products/{product_id}`：读取、编辑或删除推广商品。
+- `POST /api/accounts/{account_id}/articles/generate`：按关键词、商品和模型批量生成文章。
+- `POST /api/accounts/{account_id}/articles`：手动创建文章草稿。
+- `GET /api/articles`：按当前系统用户权限汇总查询文章，支持账号、状态和关键词筛选。
+- `GET/PATCH/DELETE /api/accounts/{account_id}/articles/{article_id}`：读取、编辑或删除文章。
+- `POST /api/articles/bulk-status`：批量调整文章状态。
+- `POST /api/articles/bulk-delete`：批量删除文章。
 
 除健康检查、版本和登录外，业务接口均要求 Bearer Token。普通业务接口允许有效期内的授权用户访问，但会按用户身份强制过滤数据；用户管理接口只允许系统管理员访问。升级启动时会自动增加多租户字段和索引，保留现有管理员、知乎账号、关键词、商品及 AI 配置。
 

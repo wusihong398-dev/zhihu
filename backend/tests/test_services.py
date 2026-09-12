@@ -1,5 +1,7 @@
 import httpx
+import pytest
 
+from app.services.ai_providers import AIProviderError, _extract_article_json
 from app.services.keyword_collector import (
     is_verification_page,
     normalize_keyword,
@@ -17,6 +19,21 @@ def test_secret_round_trip() -> None:
     assert encrypted != source
     assert decrypt_secret(encrypted) == source
     assert mask_secret(source) == "sk-t••••••••7890"
+
+
+def test_article_json_parser_accepts_plain_and_fenced_json() -> None:
+    assert _extract_article_json('{"title":"测试标题","content":"测试正文"}') == (
+        "测试标题",
+        "测试正文",
+    )
+    assert _extract_article_json(
+        '```json\n{"title":"另一个标题","content":"另一篇正文"}\n```'
+    ) == ("另一个标题", "另一篇正文")
+
+
+def test_article_json_parser_rejects_incomplete_result() -> None:
+    with pytest.raises(AIProviderError):
+        _extract_article_json('{"title":"只有标题"}')
 
 
 def test_keyword_normalization_and_baidu_parser() -> None:

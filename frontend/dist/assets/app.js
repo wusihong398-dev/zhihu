@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, page: "overview", pollTimer: null };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], page: "overview", pollTimer: null, articleSearchTimer: null };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -118,6 +118,7 @@
     renderAccounts();
     renderKeywordAccountOptions();
     renderProductAccountOptions();
+    renderArticleAccountOptions();
   }
 
   async function loadAccounts(silent = false) {
@@ -684,6 +685,254 @@
     } catch (error) { toast(error.message, "error"); }
   }
 
+  function renderArticleAccountOptions() {
+    const generate = $("#article-generate-account");
+    const filter = $("#article-account-filter");
+    const generateValue = generate.value;
+    const filterValue = filter.value;
+    const options = state.accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.display_name)}</option>`).join("");
+    generate.innerHTML = `<option value="">请选择账号</option>${options}`;
+    filter.innerHTML = `<option value="">全部知乎账号</option>${options}`;
+    if (state.accounts.some((account) => account.id === generateValue)) generate.value = generateValue;
+    else if (state.accounts.length === 1) generate.value = state.accounts[0].id;
+    if (state.accounts.some((account) => account.id === filterValue)) filter.value = filterValue;
+  }
+
+  function updateArticleGenerateEstimate() {
+    const keywordCount = state.selectedArticleKeywords.size;
+    const perKeyword = Number($("#articles-per-keyword").value) || 0;
+    const total = keywordCount * perKeyword;
+    $("#article-generate-estimate").textContent = `将生成 ${total} 篇`;
+    $("#article-generate-estimate").className = `badge ${total ? "" : "off"}`;
+    $("#article-selected-summary").textContent = `已选 ${keywordCount} 个关键词`;
+  }
+
+  function renderArticleKeywordOptions() {
+    const query = $("#article-keyword-search").value.trim().toLowerCase();
+    const filtered = state.articleGenerateKeywords.filter((item) => item.keyword.toLowerCase().includes(query));
+    $("#article-keyword-count").textContent = `显示 ${filtered.length} / ${state.articleGenerateKeywords.length} 个`;
+    $("#article-keyword-options").innerHTML = filtered.map((item) => `<label class="article-keyword-option ${state.selectedArticleKeywords.has(item.id) ? "selected" : ""}" data-keyword-id="${item.id}"><input type="checkbox" ${state.selectedArticleKeywords.has(item.id) ? "checked" : ""}><span><strong>${escapeHtml(item.keyword)}</strong><small>${item.source === "baidu" ? "百度" : item.source === "google" ? "谷歌" : "其他"} · 第 ${item.depth} 层</small></span></label>`).join("");
+    $("#article-keyword-options").hidden = filtered.length === 0;
+    $("#article-keyword-empty").hidden = filtered.length !== 0;
+    if (!filtered.length) $("#article-keyword-empty p").textContent = state.articleGenerateKeywords.length ? "没有匹配的关键词" : "当前账号或文件夹没有关键词";
+    const visibleIds = filtered.map((item) => item.id);
+    const selectedVisible = visibleIds.filter((id) => state.selectedArticleKeywords.has(id));
+    $("#article-keyword-select-all").checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    $("#article-keyword-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    $$(".article-keyword-option input", $("#article-keyword-options")).forEach((input) => input.addEventListener("change", (event) => {
+      const option = event.currentTarget.closest(".article-keyword-option");
+      if (event.currentTarget.checked) state.selectedArticleKeywords.add(option.dataset.keywordId);
+      else state.selectedArticleKeywords.delete(option.dataset.keywordId);
+      option.classList.toggle("selected", event.currentTarget.checked);
+      renderArticleKeywordOptions();
+      updateArticleGenerateEstimate();
+    }));
+    updateArticleGenerateEstimate();
+  }
+
+  function renderArticleGeneratorOptions() {
+    const folder = $("#article-generate-folder");
+    const oldFolder = folder.value;
+    folder.innerHTML = `<option value="all">全部关键词</option><option value="unfiled">未归档</option>${state.keywordFolders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}（${item.keyword_count}）</option>`).join("")}`;
+    if (["all", "unfiled"].includes(oldFolder) || state.keywordFolders.some((item) => item.id === oldFolder)) folder.value = oldFolder;
+    const product = $("#article-generate-product");
+    const oldProduct = product.value;
+    const enabledProducts = state.articleGenerateProducts.filter((item) => item.enabled);
+    product.innerHTML = `<option value="">请选择启用的商品</option>${enabledProducts.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
+    if (enabledProducts.some((item) => item.id === oldProduct)) product.value = oldProduct;
+    else if (enabledProducts.length === 1) product.value = enabledProducts[0].id;
+    const provider = $("#article-generate-provider");
+    const oldProvider = provider.value;
+    const enabledProviders = state.providers.filter((item) => item.enabled && item.has_api_key);
+    provider.innerHTML = `<option value="">请选择已配置的平台</option>${enabledProviders.map((item) => `<option value="${item.provider}">${escapeHtml(item.display_name)} · ${escapeHtml(item.model)}</option>`).join("")}`;
+    if (enabledProviders.some((item) => item.provider === oldProvider)) provider.value = oldProvider;
+    else if (enabledProviders.length === 1) provider.value = enabledProviders[0].provider;
+  }
+
+  async function loadArticleGenerator(resetSelection = false) {
+    const accountId = $("#article-generate-account").value;
+    if (!accountId) {
+      state.articleGenerateKeywords = [];
+      state.articleGenerateProducts = [];
+      state.keywordFolders = [];
+      state.selectedArticleKeywords.clear();
+      renderArticleGeneratorOptions();
+      renderArticleKeywordOptions();
+      return;
+    }
+    if (resetSelection) state.selectedArticleKeywords.clear();
+    const folder = $("#article-generate-folder").value;
+    const folderQuery = folder === "unfiled" ? "&unfiled=true" : !["all", ""].includes(folder) ? `&folder_id=${encodeURIComponent(folder)}` : "";
+    try {
+      const [folders, keywords, products, providers] = await Promise.all([
+        api(`/accounts/${accountId}/keyword-folders`),
+        api(`/accounts/${accountId}/keywords?limit=500${folderQuery}`),
+        api(`/accounts/${accountId}/products?limit=500`),
+        api("/ai/providers")
+      ]);
+      state.keywordFolders = folders;
+      state.articleGenerateKeywords = keywords.items;
+      state.articleGenerateProducts = products.items;
+      state.providers = providers;
+      const available = new Set(keywords.items.map((item) => item.id));
+      state.selectedArticleKeywords = new Set([...state.selectedArticleKeywords].filter((id) => available.has(id)));
+      renderArticleGeneratorOptions();
+      renderArticleKeywordOptions();
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function generateArticles(event) {
+    event.preventDefault();
+    const button = $("#article-generate-submit");
+    const accountId = $("#article-generate-account").value;
+    const providerName = $("#article-generate-provider").value;
+    const provider = state.providers.find((item) => item.provider === providerName);
+    const keywordIds = [...state.selectedArticleKeywords];
+    const articlesPerKeyword = Number($("#articles-per-keyword").value);
+    const total = keywordIds.length * articlesPerKeyword;
+    $("#article-generate-error").textContent = "";
+    if (!accountId) return $("#article-generate-error").textContent = "请选择知乎账号";
+    if (!keywordIds.length) return $("#article-generate-error").textContent = "请至少选择一个关键词";
+    if (!$("#article-generate-product").value) return $("#article-generate-error").textContent = "请选择推广商品";
+    if (!provider) return $("#article-generate-error").textContent = "请先在 AI 配置中保存并启用平台";
+    if (total > 50) return $("#article-generate-error").textContent = "单次最多生成 50 篇文章，请减少关键词或每词篇数";
+    setBusy(button, true, `正在生成 ${total} 篇…`);
+    $("#article-generate-progress").textContent = "正在调用 AI，请不要关闭页面；完成后会自动进入文章列表。";
+    try {
+      const result = await api(`/accounts/${accountId}/articles/generate`, {
+        method: "POST",
+        body: JSON.stringify({
+          keyword_ids: keywordIds,
+          product_id: $("#article-generate-product").value,
+          provider: provider.provider,
+          model: provider.model,
+          articles_per_keyword: articlesPerKeyword,
+          min_length: Number($("#article-min-length").value),
+          max_length: Number($("#article-max-length").value),
+          title_prompt: $("#article-title-prompt").value.trim(),
+          content_prompt: $("#article-content-prompt").value.trim()
+        })
+      });
+      $("#article-generate-progress").textContent = `完成：成功 ${result.success_count} 篇，失败 ${result.failed_count} 篇`;
+      toast(`生成完成：成功 ${result.success_count} 篇，失败 ${result.failed_count} 篇`, result.failed_count ? "error" : "success");
+      state.articlePage = 1;
+      await loadArticles(true);
+      navigate("articles");
+    } catch (error) {
+      $("#article-generate-error").textContent = error.message;
+      $("#article-generate-progress").textContent = "生成未完成，请根据错误提示检查设置";
+    } finally { setBusy(button, false); }
+  }
+
+  function articleStatusLabel(value) {
+    return { draft: "草稿", ready: "待发布", published: "已发布", failed: "失败" }[value] || value;
+  }
+
+  function updateArticleSelection() {
+    const visibleIds = (state.articles.items || []).map((item) => item.id);
+    const selectedVisible = visibleIds.filter((id) => state.selectedArticles.has(id));
+    $("#article-selected-count").textContent = `已选 ${state.selectedArticles.size} 篇`;
+    $("#article-select-all").checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    $("#article-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    $("#article-mark-ready").disabled = state.selectedArticles.size === 0;
+    $("#article-bulk-delete").disabled = state.selectedArticles.size === 0;
+  }
+
+  function renderArticles() {
+    const items = state.articles.items || [];
+    $("#article-total").textContent = `共 ${state.articles.total || 0} 篇`;
+    $("#article-list").innerHTML = items.map((item) => `<div class="content-table article-row" data-article-id="${item.id}"><div class="article-title-cell"><input type="checkbox" ${state.selectedArticles.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.title)}"><label><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title || "未命名文章")}</strong><small>${item.content_length} 字${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small></label></div><span class="article-cell-muted">${escapeHtml(item.account_name)}</span><span class="article-cell-muted">${escapeHtml(item.keyword_text || "手动创建")}</span><span class="badge article-status ${item.status}">${articleStatusLabel(item.status)}</span><span class="article-cell-muted">${formatDateTime(item.created_at)}</span><div class="article-actions"><button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button></div></div>`).join("");
+    $("#article-empty").hidden = items.length !== 0;
+    $$(".article-title-cell input", $("#article-list")).forEach((input) => input.addEventListener("change", (event) => {
+      const id = event.currentTarget.closest(".article-row").dataset.articleId;
+      if (event.currentTarget.checked) state.selectedArticles.add(id); else state.selectedArticles.delete(id);
+      updateArticleSelection();
+    }));
+    $$(".article-edit", $("#article-list")).forEach((button) => button.addEventListener("click", () => openArticleDialog(state.articles.items.find((item) => item.id === button.closest(".article-row").dataset.articleId))));
+    $$(".article-delete", $("#article-list")).forEach((button) => button.addEventListener("click", () => deleteArticle(button.closest(".article-row").dataset.articleId)));
+    const totalPages = Math.max(1, Math.ceil((state.articles.total || 0) / state.articlePageSize));
+    $("#article-pagination").hidden = !state.articles.total;
+    $("#article-page-info").textContent = `第 ${state.articlePage} / ${totalPages} 页 · 每页 100 篇 · 共 ${state.articles.total || 0} 篇`;
+    $("#article-prev").disabled = state.articlePage <= 1;
+    $("#article-next").disabled = state.articlePage >= totalPages;
+    updateArticleSelection();
+  }
+
+  async function loadArticles(silent = false) {
+    const params = new URLSearchParams({ limit: state.articlePageSize, offset: (state.articlePage - 1) * state.articlePageSize });
+    const accountId = $("#article-account-filter").value;
+    const articleStatus = $("#article-status-filter").value;
+    const query = $("#article-search").value.trim();
+    if (accountId) params.set("account_id", accountId);
+    if (articleStatus) params.set("status", articleStatus);
+    if (query) params.set("q", query);
+    try {
+      const articles = await api(`/articles?${params.toString()}`);
+      const totalPages = Math.max(1, Math.ceil(articles.total / state.articlePageSize));
+      if (state.articlePage > totalPages) { state.articlePage = totalPages; return loadArticles(silent); }
+      state.articles = articles;
+      const visible = new Set(articles.items.map((item) => item.id));
+      state.selectedArticles = new Set([...state.selectedArticles].filter((id) => visible.has(id)));
+      renderArticles();
+      if (!silent) toast("文章列表已刷新");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function openArticleDialog(article) {
+    if (!article) return;
+    state.editingArticle = article;
+    $("#article-edit-title").value = article.title;
+    $("#article-edit-content").value = article.content;
+    $("#article-edit-status").value = article.status;
+    updateArticleEditLength();
+    $("#article-edit-error").textContent = article.error_message || "";
+    $("#article-dialog").hidden = false;
+  }
+
+  function closeArticleDialog() { $("#article-dialog").hidden = true; state.editingArticle = null; }
+  function updateArticleEditLength() { $("#article-edit-length").textContent = `${$("#article-edit-content").value.replace(/\s/g, "").length} 字`; }
+
+  async function saveArticle(event) {
+    event.preventDefault();
+    if (!state.editingArticle) return;
+    const button = $("#article-submit");
+    setBusy(button, true, "保存中…");
+    try {
+      await api(`/accounts/${state.editingArticle.account_id}/articles/${state.editingArticle.id}`, { method: "PATCH", body: JSON.stringify({ title: $("#article-edit-title").value.trim(), content: $("#article-edit-content").value, status: $("#article-edit-status").value }) });
+      closeArticleDialog();
+      await loadArticles(true);
+      toast("文章已保存");
+    } catch (error) { $("#article-edit-error").textContent = error.message; }
+    finally { setBusy(button, false); }
+  }
+
+  async function deleteArticle(articleId) {
+    const article = state.articles.items.find((item) => item.id === articleId);
+    if (!article || !window.confirm(`确定删除文章“${article.title}”吗？`)) return;
+    try {
+      await api(`/accounts/${article.account_id}/articles/${article.id}`, { method: "DELETE" });
+      await loadArticles(true); toast("文章已删除");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function bulkArticleStatus() {
+    const ids = [...state.selectedArticles];
+    if (!ids.length) return;
+    try {
+      const result = await api("/articles/bulk-status", { method: "POST", body: JSON.stringify({ article_ids: ids, status: "ready" }) });
+      state.selectedArticles.clear(); await loadArticles(true); toast(`已将 ${result.affected_count} 篇文章转为待发布`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function bulkDeleteArticles() {
+    const ids = [...state.selectedArticles];
+    if (!ids.length || !window.confirm(`确定删除选中的 ${ids.length} 篇文章吗？`)) return;
+    try {
+      const result = await api("/articles/bulk-delete", { method: "POST", body: JSON.stringify({ article_ids: ids }) });
+      state.selectedArticles.clear(); await loadArticles(true); toast(`已删除 ${result.affected_count} 篇文章`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
   function navigate(page) {
     if (["users", "settings"].includes(page) && state.user?.role !== "admin") page = "overview";
     state.page = page;
@@ -698,6 +947,8 @@
     if (page === "keywords") loadKeywordData(true);
     if (page === "products") loadProducts(true);
     if (page === "users") loadUsers(true);
+    if (page === "article-generate") loadArticleGenerator(false);
+    if (page === "articles") loadArticles(true);
   }
 
   function refreshCurrentPage() {
@@ -705,6 +956,8 @@
     if (state.page === "keywords") return loadKeywordData();
     if (state.page === "ai") return loadProviders();
     if (state.page === "users") return loadUsers();
+    if (state.page === "article-generate") return loadArticleGenerator(false);
+    if (state.page === "articles") return loadArticles();
     return loadAccounts();
   }
 
@@ -769,6 +1022,29 @@
     $("#keyword-delete").addEventListener("click", deleteSelectedKeywords);
     $("#keyword-prev").addEventListener("click", () => { if (state.keywordPage > 1) { state.keywordPage -= 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
     $("#keyword-next").addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((state.keywords.total || 0) / state.keywordPageSize)); if (state.keywordPage < totalPages) { state.keywordPage += 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
+    $("#article-generate-account").addEventListener("change", () => { $("#article-generate-folder").value = "all"; $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
+    $("#article-generate-folder").addEventListener("change", () => { $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
+    $("#article-keyword-search").addEventListener("input", renderArticleKeywordOptions);
+    $("#article-keyword-select-all").addEventListener("change", (event) => {
+      const query = $("#article-keyword-search").value.trim().toLowerCase();
+      state.articleGenerateKeywords.filter((item) => item.keyword.toLowerCase().includes(query)).forEach((item) => event.currentTarget.checked ? state.selectedArticleKeywords.add(item.id) : state.selectedArticleKeywords.delete(item.id));
+      renderArticleKeywordOptions();
+    });
+    $("#articles-per-keyword").addEventListener("input", updateArticleGenerateEstimate);
+    $("#article-generate-form").addEventListener("submit", generateArticles);
+    $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
+    $("#article-status-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
+    $("#article-search").addEventListener("input", () => { window.clearTimeout(state.articleSearchTimer); state.articleSearchTimer = window.setTimeout(() => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); }, 300); });
+    $("#article-select-all").addEventListener("change", (event) => { (state.articles.items || []).forEach((item) => event.currentTarget.checked ? state.selectedArticles.add(item.id) : state.selectedArticles.delete(item.id)); updateArticleSelection(); renderArticles(); });
+    $("#article-mark-ready").addEventListener("click", bulkArticleStatus);
+    $("#article-bulk-delete").addEventListener("click", bulkDeleteArticles);
+    $("#article-prev").addEventListener("click", () => { if (state.articlePage > 1) { state.articlePage -= 1; state.selectedArticles.clear(); loadArticles(true); } });
+    $("#article-next").addEventListener("click", () => { const pages = Math.max(1, Math.ceil((state.articles.total || 0) / state.articlePageSize)); if (state.articlePage < pages) { state.articlePage += 1; state.selectedArticles.clear(); loadArticles(true); } });
+    $("#article-form").addEventListener("submit", saveArticle);
+    $("#article-edit-content").addEventListener("input", updateArticleEditLength);
+    $("#article-dialog-close").addEventListener("click", closeArticleDialog);
+    $("#article-dialog-cancel").addEventListener("click", closeArticleDialog);
+    $("#article-dialog").addEventListener("click", (event) => { if (event.target.id === "article-dialog") closeArticleDialog(); });
     $("#dialog-close").addEventListener("click", closeAccountDialog);
     $("#dialog-cancel").addEventListener("click", closeAccountDialog);
     $("#account-dialog").addEventListener("click", (event) => { if (event.target.id === "account-dialog") closeAccountDialog(); });
@@ -776,7 +1052,7 @@
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     $$('[data-page-link]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageLink)));
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); } });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); closeArticleDialog(); } });
 
     try {
       const version = await api("/version");

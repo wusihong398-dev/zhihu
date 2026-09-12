@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api import (
     accounts_router,
     ai_router,
+    articles_router,
     auth_router,
     health_router,
     keywords_router,
@@ -28,7 +29,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
@@ -37,6 +38,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(accounts_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
+app.include_router(articles_router, prefix="/api")
 app.include_router(keywords_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
 app.include_router(users_router, prefix="/api")

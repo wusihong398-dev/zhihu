@@ -7,7 +7,7 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.7.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.8.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -202,15 +202,49 @@
 
       <div id="article-generate-page" class="page">
         <section class="page-heading"><div><span class="eyebrow">AI 批量内容生产</span><h1>文章生成</h1><p>选择账号、关键词文件夹、推广商品和 AI 模型，按照提示词批量生成知乎文章。</p></div></section>
-        <section class="panel module-placeholder"><span class="module-icon">✦</span><span class="badge off">功能待填充</span><h2>文章生成工作台</h2><p>计划包含标题提示词、正文提示词、每个关键词生成篇数、字数范围、重复检测、暂停与继续。</p><div class="feature-tags"><span>关键词批量选择</span><span>提示词模板</span><span>模型选择</span><span>实时进度</span><span>质量过滤</span></div></section>
+        <form id="article-generate-form" class="panel article-generator">
+          <div class="panel-head"><div><span class="eyebrow">生成设置</span><h3>选择素材与模型</h3></div><span id="article-generate-estimate" class="badge off">将生成 0 篇</span></div>
+          <div class="article-generator-body">
+            <div class="article-generator-fields">
+              <div class="field-grid">
+                <div><label for="article-generate-account">知乎账号</label><select id="article-generate-account" required><option value="">请选择账号</option></select></div>
+                <div><label for="article-generate-folder">关键词文件夹</label><select id="article-generate-folder"><option value="all">全部关键词</option></select></div>
+              </div>
+              <div class="field-grid">
+                <div><label for="article-generate-product">推广商品</label><select id="article-generate-product" required><option value="">请选择启用的商品</option></select></div>
+                <div><label for="article-generate-provider">AI 平台与模型</label><select id="article-generate-provider" required><option value="">请选择已配置的平台</option></select></div>
+              </div>
+              <div class="field-grid three-fields">
+                <div><label for="articles-per-keyword">每个关键词生成</label><input id="articles-per-keyword" type="number" min="1" max="5" value="1" required></div>
+                <div><label for="article-min-length">最少字数</label><input id="article-min-length" type="number" min="100" max="10000" value="800" required></div>
+                <div><label for="article-max-length">最多字数</label><input id="article-max-length" type="number" min="100" max="20000" value="1500" required></div>
+              </div>
+              <label for="article-title-prompt">标题提示词</label>
+              <textarea id="article-title-prompt" rows="3" maxlength="10000">围绕{关键词}拟一个自然、有吸引力、适合知乎阅读的标题，不要夸大承诺。</textarea>
+              <label for="article-content-prompt">正文提示词</label>
+              <textarea id="article-content-prompt" rows="6" maxlength="20000">围绕{关键词}写一篇专业、自然、有实际帮助的知乎文章。商品名称：{商品名称}。商品简介：{商品简介}。核心卖点：{商品卖点}。目标人群：{目标人群}。推广链接：{推广链接}。根据这些真实资料进行适度推荐，避免生硬广告和禁用表述。</textarea>
+              <p class="field-help">可用变量：{关键词}、{商品名称}、{商品分类}、{商品简介}、{商品卖点}、{目标人群}、{推广链接}、{内容要求}、{禁用表述}</p>
+            </div>
+            <div class="article-keyword-picker">
+              <div class="picker-head"><div><strong>选择关键词</strong><small id="article-keyword-count">共 0 个</small></div><label class="select-all"><input id="article-keyword-select-all" type="checkbox"> 全选当前结果</label></div>
+              <label class="search-box">⌕<input id="article-keyword-search" placeholder="搜索关键词"></label>
+              <div id="article-keyword-options" class="article-keyword-options"></div>
+              <div id="article-keyword-empty" class="mini-empty"><span>⌕</span><p>选择账号后加载关键词</p></div>
+            </div>
+          </div>
+          <div class="generator-submit"><div><strong id="article-selected-summary">已选 0 个关键词</strong><small id="article-generate-progress">生成后的文章先保存为草稿</small></div><p id="article-generate-error" class="form-error" role="alert"></p><button id="article-generate-submit" class="button button-primary" type="submit">开始生成文章</button></div>
+        </form>
       </div>
 
       <div id="articles-page" class="page">
         <section class="page-heading"><div><span class="eyebrow">文章内容资产</span><h1>文章列表</h1><p>统一查看各账号的草稿、待发布、已发布和失败文章，支持单选、全选与批量操作。</p></div><button class="button button-primary" data-page-link="article-generate">＋ 生成文章</button></section>
         <section class="panel content-list-panel">
-          <div class="content-toolbar"><label class="search-box">⌕<input placeholder="搜索文章标题或关键词" disabled></label><select disabled><option>全部知乎账号</option></select><select disabled><option>全部状态</option><option>草稿</option><option>待发布</option><option>已发布</option><option>失败</option></select><span>共 0 篇</span></div>
-          <div class="content-table header"><span><input type="checkbox" disabled> 标题</span><span>知乎账号</span><span>关键词</span><span>状态</span><span>生成时间</span><span>操作</span></div>
-          <div class="empty-state"><span>▤</span><h3>文章列表为空</h3><p>文章数据接口将在下一阶段接入，这里将保留全部文章及发布结果。</p><button class="button button-primary" data-page-link="article-generate">前往文章生成</button></div>
+          <div class="content-toolbar"><label class="search-box">⌕<input id="article-search" placeholder="搜索文章标题、关键词或商品"></label><select id="article-account-filter"><option value="">全部知乎账号</option></select><select id="article-status-filter"><option value="">全部状态</option><option value="draft">草稿</option><option value="ready">待发布</option><option value="published">已发布</option><option value="failed">失败</option></select><span id="article-total">共 0 篇</span></div>
+          <div class="selection-toolbar article-selection"><label class="select-all"><input id="article-select-all" type="checkbox"> 全选当前页</label><span id="article-selected-count">已选 0 篇</span><button id="article-mark-ready" class="button button-ghost" type="button" disabled>转为待发布</button><button id="article-bulk-delete" class="button button-ghost danger-text" type="button" disabled>删除所选</button></div>
+          <div class="content-table header"><span>选择 / 标题</span><span>知乎账号</span><span>关键词</span><span>状态</span><span>生成时间</span><span>操作</span></div>
+          <div id="article-list"></div>
+          <div id="article-empty" class="empty-state"><span>▤</span><h3>文章列表为空</h3><p>选择关键词和推广商品生成第一批文章。</p><button class="button button-primary" data-page-link="article-generate">前往文章生成</button></div>
+          <div id="article-pagination" class="pagination" hidden><button id="article-prev" class="button button-ghost" type="button">上一页</button><span id="article-page-info">第 1 / 1 页</span><button id="article-next" class="button button-ghost" type="button">下一页</button></div>
         </section>
       </div>
 
@@ -340,6 +374,19 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.7.0" defer></script>
+  <div id="article-dialog" class="dialog-backdrop" hidden>
+    <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="article-dialog-title">
+      <div class="dialog-head"><div><span class="eyebrow">文章草稿编辑</span><h2 id="article-dialog-title">编辑文章</h2></div><button id="article-dialog-close" class="icon-button" aria-label="关闭">×</button></div>
+      <form id="article-form">
+        <label for="article-edit-title">文章标题</label><input id="article-edit-title" maxlength="300" required>
+        <label for="article-edit-content">文章正文</label><textarea id="article-edit-content" maxlength="100000" rows="18"></textarea>
+        <div class="field-grid"><div><label for="article-edit-status">文章状态</label><select id="article-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="published">已发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="article-edit-length">0 字</strong></div></div>
+        <p id="article-edit-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="article-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="article-submit" class="button button-primary" type="submit">保存文章</button></div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/assets/app.js?v=0.8.0" defer></script>
 </body>
 </html>

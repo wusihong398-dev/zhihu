@@ -1,5 +1,6 @@
 from app.models.account import AccountStatus, ZhihuAccount
 from app.models.ai_provider import AIProviderConfig
+from app.models.article import Article, ArticleStatus
 from app.models.keyword import AccountKeyword, KeywordSource
 from app.models.keyword_folder import (
     KeywordFolder,
@@ -19,6 +20,8 @@ __all__ = [
     "AccountKeyword",
     "AccountStatus",
     "AIProviderConfig",
+    "Article",
+    "ArticleStatus",
     "KeywordCollectionJob",
     "KeywordFolder",
     "KeywordFolderItem",
