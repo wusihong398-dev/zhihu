@@ -6,6 +6,7 @@ from app.schemas.article import (
     ArticleGenerateResponse,
     ArticleListResponse,
     ArticleRead,
+    ArticleSyncResponse,
     ArticleUpdate,
 )
 from app.schemas.article_prompt import (
@@ -31,6 +32,7 @@ __all__ = [
     "ArticleGenerateResponse",
     "ArticleListResponse",
     "ArticleRead",
+    "ArticleSyncResponse",
     "ArticleUpdate",
     "PromptFolderCreate",
     "PromptFolderRead",

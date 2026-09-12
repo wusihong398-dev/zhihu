@@ -849,6 +849,7 @@
       ? options
       : `<option value="">暂无知乎账号</option>`;
     filter.disabled = state.accounts.length === 0;
+    $("#article-sync").disabled = state.accounts.length === 0;
     if (state.accounts.some((account) => account.id === generateValue)) generate.value = generateValue;
     else if (state.accounts.length === 1) generate.value = state.accounts[0].id;
     if (state.accounts.some((account) => account.id === filterValue)) filter.value = filterValue;
@@ -1269,6 +1270,31 @@
     } catch (error) { toast(error.message, "error"); }
   }
 
+  async function syncPublishedArticles() {
+    const accountId = $("#article-account-filter").value;
+    const account = state.accounts.find((item) => item.id === accountId);
+    if (!account) return toast("请先选择知乎账号", "error");
+    if (!window.confirm(`确定从“${account.display_name}”的知乎创作中心同步文章吗？\n\n系统只会按完整标题匹配本地失败记录，不会导入无关文章，也不会重新发布。`)) return;
+    const button = $("#article-sync");
+    setBusy(button, true, "同步中…");
+    try {
+      const result = await api(`/accounts/${accountId}/articles/sync`, { method: "POST" });
+      if (result.matched_count > 0) {
+        $$(".article-status-tab").forEach((item) => item.classList.toggle("active", item.dataset.status === "published"));
+        state.articlePage = 1;
+        state.selectedArticles.clear();
+      }
+      await loadArticles(true);
+      const unmatched = result.unmatched_failed_count ? `，仍有 ${result.unmatched_failed_count} 篇失败记录未匹配` : "";
+      const unchanged = result.already_synced_count ? `，已同步 ${result.already_synced_count} 篇` : "";
+      toast(`同步完成：读取 ${result.scanned_count} 篇，修正 ${result.matched_count} 篇${unchanged}${unmatched}`, result.unmatched_failed_count ? "error" : "success");
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
   function openArticleDialog(article) {
     if (!article) return;
     state.editingArticle = article;
@@ -1463,6 +1489,7 @@
     $("#article-generation-resume").addEventListener("click", () => controlArticleJob("generate", "resume"));
     $("#article-generation-stop").addEventListener("click", () => controlArticleJob("generate", "stop"));
     $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
+    $("#article-sync").addEventListener("click", syncPublishedArticles);
     $$(".article-status-tab").forEach((button) => button.addEventListener("click", () => {
       $$(".article-status-tab").forEach((item) => item.classList.toggle("active", item === button));
       state.articlePage = 1;

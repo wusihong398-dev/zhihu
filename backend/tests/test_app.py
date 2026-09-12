@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.10.6"
+        assert version.json()["version"] == "0.10.7"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -55,3 +55,6 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert "openZhihuLoginScreenshot" in script
     assert "width: min(1600px, calc(100vw - 32px)) !important" in login_css
     assert "object-fit: contain" in login_css
+    assert 'id="article-sync"' in index
+    assert "syncPublishedArticles" in script
+    assert "/articles/sync" in script

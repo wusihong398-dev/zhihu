@@ -32,6 +32,7 @@
 .article-status-tab.active small { color: #8ea8cc; }
 .article-failure-reason { display: block; margin-top: 7px; color: #ff8fa1; font-size: .7rem; line-height: 1.45; white-space: normal; }
 .article-failure-reason b { color: #ffb0bd; }
+.page-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 1250px) {
   .prompt-template-toolbar { grid-template-columns: 1fr 1fr; }
   .prompt-template-actions { grid-column: 1 / -1; justify-content: flex-start; }
@@ -43,6 +44,7 @@
   .job-controls { justify-content: flex-start; flex-wrap: wrap; }
   .article-content-toolbar { grid-template-columns: 1fr; }
   .article-status-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
+  .page-heading-actions { width: 100%; justify-content: flex-start; }
 }
 
 .account-row { grid-template-columns: minmax(170px, 1.4fr) minmax(125px, .8fr) minmax(125px, .8fr) 100px 64px minmax(320px, auto); }

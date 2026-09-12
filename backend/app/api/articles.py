@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 
@@ -27,6 +28,7 @@ from app.schemas.article import (
     ArticleListResponse,
     ArticlePublishJobCreate,
     ArticleRead,
+    ArticleSyncResponse,
     ArticleUpdate,
 )
 from app.services.access_control import get_account_for_user
@@ -37,6 +39,11 @@ from app.services.ai_providers import (
     generate_article_content,
 )
 from app.services.secret_box import decrypt_secret
+from app.services.zhihu_article_sync import (
+    ZhihuArticleSyncError,
+    ZhihuArticleSyncLoginRequired,
+    fetch_zhihu_published_articles,
+)
 from app.services.zhihu_publisher import (
     ZhihuLoginRequired,
     ZhihuPublishError,
@@ -48,6 +55,10 @@ router = APIRouter(tags=["articles"], dependencies=[Depends(require_active_user)
 
 def _content_length(value: str) -> int:
     return len(re.sub(r"\s+", "", value))
+
+
+def _sync_title_key(value: str) -> str:
+    return "".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
 def _article_read(article: Article, account_name: str = "") -> ArticleRead:
@@ -457,6 +468,78 @@ async def create_publish_job(
     await db.refresh(job)
     start_article_job(job.id)
     return _job_read(job)
+
+
+@router.post(
+    "/accounts/{account_id}/articles/sync",
+    response_model=ArticleSyncResponse,
+)
+async def sync_published_articles(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ArticleSyncResponse:
+    account = await get_account_for_user(account_id, user, db)
+    try:
+        remote_articles = await fetch_zhihu_published_articles(account)
+    except ZhihuArticleSyncLoginRequired as exc:
+        account.status = AccountStatus.offline
+        await db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ZhihuArticleSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    result = await db.execute(
+        select(Article)
+        .where(
+            Article.account_id == account_id,
+            Article.status.in_([ArticleStatus.failed, ArticleStatus.published]),
+        )
+        .order_by(Article.created_at.desc(), Article.id.desc())
+    )
+    local_articles = list(result.scalars())
+    remote_by_title: dict[str, list] = {}
+    for remote in remote_articles:
+        remote_by_title.setdefault(_sync_title_key(remote.title), []).append(remote)
+
+    matched_count = 0
+    already_synced_count = 0
+    matched_local_ids: set[uuid.UUID] = set()
+    for article in local_articles:
+        candidates = remote_by_title.get(_sync_title_key(article.title), [])
+        if not candidates:
+            continue
+        remote = candidates.pop(0)
+        matched_local_ids.add(article.id)
+        if (
+            article.status == ArticleStatus.published
+            and article.published_url == remote.url
+        ):
+            already_synced_count += 1
+            continue
+        published_at = (
+            remote.published_at or article.publish_attempted_at or datetime.now(UTC)
+        )
+        article.status = ArticleStatus.published
+        article.published_url = remote.url
+        article.published_at = published_at
+        article.publish_attempted_at = article.publish_attempted_at or published_at
+        article.error_message = None
+        matched_count += 1
+
+    account.status = AccountStatus.online
+    await db.commit()
+    unmatched_failed_count = sum(
+        1
+        for article in local_articles
+        if article.status == ArticleStatus.failed and article.id not in matched_local_ids
+    )
+    return ArticleSyncResponse(
+        scanned_count=len(remote_articles),
+        matched_count=matched_count,
+        already_synced_count=already_synced_count,
+        unmatched_failed_count=unmatched_failed_count,
+    )
 
 
 @router.get("/article-jobs/latest", response_model=ArticleJobRead | None)

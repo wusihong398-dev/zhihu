@@ -7,9 +7,9 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.10.6">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.10.6">
-  <link rel="stylesheet" href="/assets/login.css?v=0.10.6">
+  <link rel="stylesheet" href="/assets/app.css?v=0.10.7">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.10.7">
+  <link rel="stylesheet" href="/assets/login.css?v=0.10.7">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -246,7 +246,7 @@
       </div>
 
       <div id="articles-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">文章内容资产</span><h1>文章列表</h1><p>文章先按知乎账号独立归类，再分别进入草稿箱、待发布、已发布和发布失败栏目。</p></div><button class="button button-primary" data-page-link="article-generate">＋ 生成文章</button></section>
+        <section class="page-heading"><div><span class="eyebrow">文章内容资产</span><h1>文章列表</h1><p>文章先按知乎账号独立归类，再分别进入草稿箱、待发布、已发布和发布失败栏目。</p></div><div class="page-heading-actions"><button id="article-sync" class="button button-ghost" type="button">↻ 同步知乎文章</button><button class="button button-primary" data-page-link="article-generate">＋ 生成文章</button></div></section>
         <section class="panel content-list-panel">
           <div class="content-toolbar article-content-toolbar"><label class="search-box">⌕<input id="article-search" placeholder="搜索当前账号、当前栏目的文章"></label><select id="article-account-filter" aria-label="选择知乎账号"><option value="">暂无知乎账号</option></select><span id="article-total">当前账号 · 草稿箱 0 篇</span></div>
           <nav class="article-status-tabs" aria-label="文章栏目"><button class="article-status-tab active" data-status="draft" type="button"><span>草稿箱</span><small>编辑和整理</small></button><button class="article-status-tab" data-status="ready" type="button"><span>待发布</span><small>等待发布队列</small></button><button class="article-status-tab" data-status="published" type="button"><span>已发布</span><small>真实发布成功</small></button><button class="article-status-tab" data-status="failed" type="button"><span>发布失败</span><small>查看原因并重试</small></button></nav>
@@ -413,6 +413,6 @@
     </section>
   </div>
 
-  <script src="/assets/app.js?v=0.10.6" defer></script>
+  <script src="/assets/app.js?v=0.10.7" defer></script>
 </body>
 </html>

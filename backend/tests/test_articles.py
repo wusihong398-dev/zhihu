@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from app.core.security import require_active_user
 from app.main import app
 from app.models.user import UserRole
 from app.services.zhihu_publisher import ZhihuPublishError
+from app.services.zhihu_article_sync import ZhihuPublishedArticle
 
 
 ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
@@ -169,5 +171,68 @@ def test_failed_publish_records_attempt_time_and_reason(monkeypatch) -> None:
             assert saved["error_message"] == "知乎测试拒绝发布"
             assert saved["publish_attempted_at"] is not None
             assert saved["published_at"] is None
+    finally:
+        app.dependency_overrides.pop(require_active_user, None)
+
+
+def test_sync_recovers_false_failed_article_without_touching_unmatched(monkeypatch) -> None:
+    async def fake_sync(account):
+        return [
+            ZhihuPublishedArticle(
+                article_id="2082171778986664628",
+                title="实际已经发布的文章",
+                url="https://zhuanlan.zhihu.com/p/2082171778986664628",
+                published_at=datetime(2026, 9, 12, 20, 55, tzinfo=UTC),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.api.articles.fetch_zhihu_published_articles", fake_sync
+    )
+    app.dependency_overrides[require_active_user] = lambda: ADMIN
+    try:
+        with TestClient(app) as client:
+            account = client.post(
+                "/api/accounts", json={"display_name": "同步测试账号"}
+            ).json()
+            recovered = client.post(
+                f"/api/accounts/{account['id']}/articles",
+                json={
+                    "title": "实际已经发布的文章",
+                    "content": "正文",
+                    "status": "failed",
+                },
+            ).json()
+            client.post(
+                f"/api/accounts/{account['id']}/articles",
+                json={
+                    "title": "确实没有发布的文章",
+                    "content": "正文",
+                    "status": "failed",
+                },
+            )
+
+            synced = client.post(
+                f"/api/accounts/{account['id']}/articles/sync"
+            )
+            assert synced.status_code == 200
+            assert synced.json() == {
+                "scanned_count": 1,
+                "matched_count": 1,
+                "already_synced_count": 0,
+                "unmatched_failed_count": 1,
+            }
+            published = client.get(
+                f"/api/articles?account_id={account['id']}&status=published"
+            ).json()
+            saved = next(
+                item for item in published["items"] if item["id"] == recovered["id"]
+            )
+            assert saved["published_url"].endswith("/2082171778986664628")
+            assert saved["error_message"] is None
+            failed = client.get(
+                f"/api/articles?account_id={account['id']}&status=failed"
+            ).json()
+            assert failed["total"] == 1
     finally:
         app.dependency_overrides.pop(require_active_user, None)

@@ -16,6 +16,7 @@ from app.services.keyword_collector import (
     parse_google_suggestions,
 )
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
+from app.services.zhihu_article_sync import _published_article_from_payload
 from app.services.zhihu_login import has_zhihu_auth_cookie
 from app.services.zhihu_publisher import (
     ZhihuPublishError,
@@ -98,6 +99,16 @@ def test_zhihu_login_requires_real_auth_cookie() -> None:
     assert has_zhihu_auth_cookie([{"name": "z_c0", "value": "encrypted-login-cookie"}])
     assert not has_zhihu_auth_cookie([{"name": "d_c0", "value": "device-cookie"}])
     assert not has_zhihu_auth_cookie([{"name": "z_c0", "value": ""}])
+
+
+def test_zhihu_article_sync_payload_builds_public_url_and_time() -> None:
+    item = _published_article_from_payload(
+        {"id": 2082171778986664628, "title": "已经发布的文章", "created": 1789246500}
+    )
+    assert item is not None
+    assert item.url == "https://zhuanlan.zhihu.com/p/2082171778986664628"
+    assert item.published_at is not None
+    assert _published_article_from_payload({"id": "draft", "title": "草稿"}) is None
 
 
 def test_zhihu_public_url_does_not_accept_editor_url() -> None:

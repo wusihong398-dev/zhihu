@@ -107,6 +107,13 @@ class ArticleBulkResult(BaseModel):
     affected_count: int
 
 
+class ArticleSyncResponse(BaseModel):
+    scanned_count: int
+    matched_count: int
+    already_synced_count: int
+    unmatched_failed_count: int
+
+
 class ArticlePublishJobCreate(BaseModel):
     article_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
 
