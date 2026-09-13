@@ -14,6 +14,12 @@ install -d -m 755 /var/www/totod /var/www/totod/assets
 install -m 644 "${PROJECT_DIR}/frontend/dist/index.html" /var/www/totod/index.html
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/app.css" /var/www/totod/assets/app.css
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/app.js" /var/www/totod/assets/app.js
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/article-workflow.css" /var/www/totod/assets/article-workflow.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/login.css" /var/www/totod/assets/login.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/qa.css" /var/www/totod/assets/qa.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/qa.js" /var/www/totod/assets/qa.js
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/operations.css" /var/www/totod/assets/operations.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/operations.js" /var/www/totod/assets/operations.js
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/favicon.svg" /var/www/totod/assets/favicon.svg
 
 echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-totod.conf
@@ -32,6 +38,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     echo "DATABASE_URL=postgresql+asyncpg://totod:${database_password}@postgres:5432/totod"
     echo "REDIS_URL=redis://redis:6379/0"
     echo "ACCOUNT_DATA_ROOT=/var/lib/totod/accounts"
+    echo "MEDIA_DATA_ROOT=/var/lib/totod/uploads"
+    echo "PUBLIC_BASE_URL=https://totod.cn"
     echo "DEFAULT_TIMEZONE=Asia/Shanghai"
     echo "POSTGRES_DB=totod"
     echo "POSTGRES_USER=totod"

@@ -122,6 +122,21 @@ async def create_schema() -> None:
                 )
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        if engine.dialect.name == "postgresql":
+            # create_all creates media tables for new installations but does not
+            # add columns to an existing articles table.
+            await connection.execute(
+                text(
+                    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS "
+                    "local_image_id UUID NULL"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_articles_local_image_id "
+                    "ON articles (local_image_id)"
+                )
+            )
         # Older versions accepted /p/<id>/edit as a successful publication.
         # Such a URL only proves that an editor draft exists, so make the
         # historical record honest and allow the user to publish it again.

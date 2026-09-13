@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -18,7 +18,8 @@
   }
 
   async function api(path, options = {}) {
-    const headers = { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) };
+    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+    const headers = { ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     const response = await fetch(`/api${path}`, { ...options, headers });
     if (response.status === 401 && path !== "/auth/login") {
@@ -974,6 +975,143 @@
     } catch (error) { toast(error.message, "error"); }
   }
 
+  function mediaFolderOptions(prefix = "") {
+    return state.mediaFolders.map((folder) => `<option value="${folder.id}">${escapeHtml(prefix + folder.name)}（${folder.image_count} 张）</option>`).join("");
+  }
+
+  function renderMediaFolderOptions() {
+    const filter = $("#media-folder-filter");
+    const upload = $("#media-upload-folder");
+    const generator = $("#article-local-image-folder");
+    const filterValue = filter.value;
+    const uploadValue = upload.value;
+    const generatorValue = generator.value;
+    filter.innerHTML = `<option value="all">全部文件</option><option value="unfiled">未归档</option>${mediaFolderOptions()}`;
+    upload.innerHTML = `<option value="">未归档</option>${mediaFolderOptions()}`;
+    generator.innerHTML = `<option value="">全部图片库</option>${mediaFolderOptions()}`;
+    if (["all", "unfiled", ...state.mediaFolders.map((item) => item.id)].includes(filterValue)) filter.value = filterValue;
+    if (state.mediaFolders.some((item) => item.id === uploadValue)) upload.value = uploadValue;
+    if (state.mediaFolders.some((item) => item.id === generatorValue)) generator.value = generatorValue;
+    const hasFolder = state.mediaFolders.some((item) => item.id === filter.value);
+    $("#media-folder-rename").disabled = !hasFolder;
+    $("#media-folder-delete").disabled = !hasFolder;
+  }
+
+  function formatBytes(value) {
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function updateMediaSelection() {
+    $("#media-selected-count").textContent = `已选 ${state.selectedMedia.size} 个`;
+    $("#media-delete-selected").disabled = state.selectedMedia.size === 0;
+    const visible = state.media.items || [];
+    $("#media-select-all").checked = visible.length > 0 && visible.every((item) => state.selectedMedia.has(item.id));
+  }
+
+  function renderMedia() {
+    const items = state.media.items || [];
+    $("#media-total").textContent = `共 ${state.media.total || 0} 个文件`;
+    $("#media-empty").hidden = items.length > 0;
+    $("#media-list").innerHTML = items.map((item) => {
+      const preview = item.kind === "image"
+        ? `<div class="media-preview"><img src="${escapeHtml(item.public_url)}" alt="${escapeHtml(item.original_name)}" loading="lazy"></div>`
+        : `<div class="media-preview archive">▣</div>`;
+      const archiveAction = item.kind === "archive"
+        ? `<button class="button button-primary media-extract" data-media-id="${item.id}" ${item.extracted ? "disabled" : ""}>${item.extracted ? "已解压" : "解压"}</button>`
+        : "";
+      return `<article class="media-card ${state.selectedMedia.has(item.id) ? "selected" : ""}" data-media-id="${item.id}"><label class="media-card-check"><input type="checkbox" ${state.selectedMedia.has(item.id) ? "checked" : ""}></label>${preview}<div class="media-card-body"><strong title="${escapeHtml(item.original_name)}">${escapeHtml(item.original_name)}</strong><small>${item.kind === "image" ? "图片" : "压缩包"} · ${formatBytes(item.size_bytes)} · ${escapeHtml(item.folder_name || "未归档")}</small><div class="media-card-actions">${archiveAction}<button class="button button-ghost danger-text media-delete-one" data-media-id="${item.id}">删除</button></div></div></article>`;
+    }).join("");
+    $$(".media-card-check input", $("#media-list")).forEach((input) => input.addEventListener("change", (event) => {
+      const id = event.currentTarget.closest(".media-card").dataset.mediaId;
+      if (event.currentTarget.checked) state.selectedMedia.add(id); else state.selectedMedia.delete(id);
+      renderMedia();
+    }));
+    $$(".media-extract", $("#media-list")).forEach((button) => button.addEventListener("click", () => extractMediaArchive(button.dataset.mediaId, button)));
+    $$(".media-delete-one", $("#media-list")).forEach((button) => button.addEventListener("click", () => deleteMedia([button.dataset.mediaId])));
+    const pages = Math.max(1, Math.ceil((state.media.total || 0) / state.mediaPageSize));
+    $("#media-pagination").hidden = !state.media.total;
+    $("#media-page-info").textContent = `第 ${state.mediaPage} / ${pages} 页 · 每页 100 个`;
+    $("#media-prev").disabled = state.mediaPage <= 1;
+    $("#media-next").disabled = state.mediaPage >= pages;
+    updateMediaSelection();
+  }
+
+  async function loadMedia(silent = false) {
+    try {
+      const folder = $("#media-folder-filter").value;
+      const params = new URLSearchParams({ limit: String(state.mediaPageSize), offset: String((state.mediaPage - 1) * state.mediaPageSize) });
+      if (folder === "unfiled") params.set("unfiled", "true"); else if (!["all", ""].includes(folder)) params.set("folder_id", folder);
+      if ($("#media-kind-filter").value) params.set("kind", $("#media-kind-filter").value);
+      if ($("#media-search").value.trim()) params.set("q", $("#media-search").value.trim());
+      const [folders, media] = await Promise.all([api("/local-media/folders"), api(`/local-media?${params}`)]);
+      state.mediaFolders = folders;
+      state.media = media;
+      const pages = Math.max(1, Math.ceil(media.total / state.mediaPageSize));
+      if (state.mediaPage > pages) { state.mediaPage = pages; return loadMedia(silent); }
+      const visible = new Set(media.items.map((item) => item.id));
+      state.selectedMedia = new Set([...state.selectedMedia].filter((id) => visible.has(id)));
+      renderMediaFolderOptions();
+      renderMedia();
+      if (!silent) toast("本地图片库已刷新");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function uploadMedia(event) {
+    event.preventDefault();
+    const files = [...$("#media-upload-files").files];
+    if (!files.length) return $("#media-upload-error").textContent = "请选择图片或压缩包";
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    if ($("#media-upload-folder").value) form.append("folder_id", $("#media-upload-folder").value);
+    const button = $("#media-upload-submit");
+    $("#media-upload-error").textContent = "";
+    setBusy(button, true, "正在上传…");
+    try {
+      const result = await api("/local-media/upload", { method: "POST", body: form });
+      $("#media-upload-files").value = "";
+      await loadMedia(true);
+      toast(`已上传 ${result.uploaded_count} 个文件`);
+    } catch (error) { $("#media-upload-error").textContent = error.message; }
+    finally { setBusy(button, false); }
+  }
+
+  async function createMediaFolder() {
+    const name = window.prompt("请输入图片文件夹名称");
+    if (!name?.trim()) return;
+    try { const folder = await api("/local-media/folders", { method: "POST", body: JSON.stringify({ name: name.trim() }) }); await loadMedia(true); $("#media-folder-filter").value = folder.id; await loadMedia(true); toast("图片文件夹已创建"); }
+    catch (error) { toast(error.message, "error"); }
+  }
+
+  async function renameMediaFolder() {
+    const folder = state.mediaFolders.find((item) => item.id === $("#media-folder-filter").value);
+    if (!folder) return;
+    const name = window.prompt("请输入新的图片文件夹名称", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+    try { await api(`/local-media/folders/${folder.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) }); await loadMedia(true); $("#media-folder-filter").value = folder.id; toast("图片文件夹已改名"); }
+    catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteMediaFolder() {
+    const folder = state.mediaFolders.find((item) => item.id === $("#media-folder-filter").value);
+    if (!folder || !window.confirm(`确定删除文件夹“${folder.name}”吗？文件会保留并移到未归档。`)) return;
+    try { await api(`/local-media/folders/${folder.id}`, { method: "DELETE" }); $("#media-folder-filter").value = "unfiled"; await loadMedia(true); toast("文件夹已删除，原文件已移到未归档"); }
+    catch (error) { toast(error.message, "error"); }
+  }
+
+  async function extractMediaArchive(id, button) {
+    setBusy(button, true, "解压中…");
+    try { const result = await api(`/local-media/${id}/extract`, { method: "POST" }); await loadMedia(true); toast(`解压完成：新增 ${result.extracted_count} 张图片，跳过 ${result.skipped_count} 个文件`); }
+    catch (error) { toast(error.message, "error"); setBusy(button, false); }
+  }
+
+  async function deleteMedia(ids) {
+    if (!ids.length || !window.confirm(`确定删除所选 ${ids.length} 个文件吗？删除后无法恢复。`)) return;
+    try { const result = await api("/local-media/bulk-delete", { method: "POST", body: JSON.stringify({ asset_ids: ids }) }); state.selectedMedia.clear(); await loadMedia(true); toast(`已删除 ${result.affected_count} 个文件`); }
+    catch (error) { toast(error.message, "error"); }
+  }
+
   function renderArticleAccountOptions() {
     const generate = $("#article-generate-account");
     const filter = $("#article-account-filter");
@@ -1215,19 +1353,22 @@
     const folder = $("#article-generate-folder").value;
     const folderQuery = folder === "unfiled" ? "&unfiled=true" : !["all", ""].includes(folder) ? `&folder_id=${encodeURIComponent(folder)}` : "";
     try {
-      const [folders, keywords, products, providers] = await Promise.all([
+      const [folders, keywords, products, providers, mediaFolders] = await Promise.all([
         api(`/accounts/${accountId}/keyword-folders`),
         api(`/accounts/${accountId}/keywords?limit=500${folderQuery}`),
         api(`/accounts/${accountId}/products?limit=500`),
-        api("/ai/providers")
+        api("/ai/providers"),
+        api("/local-media/folders")
       ]);
       state.keywordFolders = folders;
       state.articleGenerateKeywords = keywords.items;
       state.articleGenerateProducts = products.items;
       state.providers = providers;
+      state.mediaFolders = mediaFolders;
       const available = new Set(keywords.items.map((item) => item.id));
       state.selectedArticleKeywords = new Set([...state.selectedArticleKeywords].filter((id) => available.has(id)));
       renderArticleGeneratorOptions();
+      renderMediaFolderOptions();
       renderArticleKeywordOptions();
     } catch (error) { toast(error.message, "error"); }
   }
@@ -1262,6 +1403,7 @@
           max_length: Number($("#article-max-length").value),
           title_prompt: $("#article-title-prompt").value.trim(),
           content_prompt: $("#article-content-prompt").value.trim(),
+          local_image_folder_id: $("#article-local-image-folder").value || null,
           output_mode: $("#article-output-mode").value
         })
       });
@@ -1560,14 +1702,15 @@
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
     const articleTitles = { draft: "草稿文章", ready: "待发布文章", published: "已发布文章", failed: "发布失败文章" };
     const answerTitles = { draft: "草稿回答", ready: "待发布回答", published: "已发布回答", failed: "发布失败回答" };
-    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
-    const kickers = { overview: "工作台", accounts: "账号", products: "账号", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "local-media": "本地图片库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号", products: "账号", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "local-media": "文章", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
     if (page === "ai") loadProviders(true);
     if (["keyword-collect", "keywords"].includes(page)) loadKeywordData(true);
     if (page === "keyword-recycle") loadRecycledKeywords(true);
+    if (page === "local-media") loadMedia(true);
     if (page === "products") loadProducts(true);
     if (page === "users") loadUsers(true);
     if (page === "article-generate") { loadArticleGenerator(false); loadLatestArticleJob("generate"); }
@@ -1579,6 +1722,7 @@
     if (state.page === "products") return loadProducts();
     if (["keyword-collect", "keywords"].includes(state.page)) return loadKeywordData();
     if (state.page === "keyword-recycle") return loadRecycledKeywords();
+    if (state.page === "local-media") return loadMedia();
     if (state.page === "ai") return loadProviders();
     if (state.page === "users") return loadUsers();
     if (state.page === "article-generate") return loadArticleGenerator(false);
@@ -1657,6 +1801,17 @@
     $("#keyword-auto-restore-now").addEventListener("click", autoRestoreKeywordsNow);
     $("#recycle-keyword-prev").addEventListener("click", () => { if (state.recycleKeywordPage > 1) { state.recycleKeywordPage -= 1; state.selectedRecycledKeywords.clear(); loadRecycledKeywords(true); } });
     $("#recycle-keyword-next").addEventListener("click", () => { const pages = Math.max(1, Math.ceil((state.recycledKeywords.total || 0) / state.keywordPageSize)); if (state.recycleKeywordPage < pages) { state.recycleKeywordPage += 1; state.selectedRecycledKeywords.clear(); loadRecycledKeywords(true); } });
+    $("#media-upload-form").addEventListener("submit", uploadMedia);
+    $("#media-folder-create").addEventListener("click", createMediaFolder);
+    $("#media-folder-rename").addEventListener("click", renameMediaFolder);
+    $("#media-folder-delete").addEventListener("click", deleteMediaFolder);
+    $("#media-folder-filter").addEventListener("change", () => { state.mediaPage = 1; state.selectedMedia.clear(); loadMedia(true); });
+    $("#media-kind-filter").addEventListener("change", () => { state.mediaPage = 1; state.selectedMedia.clear(); loadMedia(true); });
+    $("#media-search").addEventListener("input", () => { window.clearTimeout(state.mediaSearchTimer); state.mediaSearchTimer = window.setTimeout(() => { state.mediaPage = 1; state.selectedMedia.clear(); loadMedia(true); }, 300); });
+    $("#media-select-all").addEventListener("change", (event) => { (state.media.items || []).forEach((item) => event.currentTarget.checked ? state.selectedMedia.add(item.id) : state.selectedMedia.delete(item.id)); renderMedia(); });
+    $("#media-delete-selected").addEventListener("click", () => deleteMedia([...state.selectedMedia]));
+    $("#media-prev").addEventListener("click", () => { if (state.mediaPage > 1) { state.mediaPage -= 1; state.selectedMedia.clear(); loadMedia(true); } });
+    $("#media-next").addEventListener("click", () => { const pages = Math.max(1, Math.ceil((state.media.total || 0) / state.mediaPageSize)); if (state.mediaPage < pages) { state.mediaPage += 1; state.selectedMedia.clear(); loadMedia(true); } });
     $("#article-generate-account").addEventListener("change", () => { $("#article-generate-folder").value = "all"; $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
     $("#article-generate-folder").addEventListener("change", () => { $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
     $("#prompt-folder-filter").addEventListener("change", renderPromptLibrary);

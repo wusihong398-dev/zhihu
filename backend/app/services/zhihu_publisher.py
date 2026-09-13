@@ -3,6 +3,7 @@ import html
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,6 +34,72 @@ _PUBLISH_RESPONSE_PATHS = (
     "/api/v4/content/publish",
     "/api/articles/",
 )
+_LOCAL_IMAGE_MARKDOWN_RE = re.compile(
+    r"!\[[^\]]*\]\([^\)]*/api/local-media/public/[0-9a-fA-F-]+\)"
+)
+
+
+async def _fill_article_editor(
+    page: Any, editor: Any, content: str, image_path: Path | None
+) -> None:
+    if image_path is None:
+        try:
+            await editor.fill(content)
+        except Exception:
+            await editor.click()
+            await page.keyboard.press("Control+A")
+            await page.keyboard.insert_text(content)
+        return
+
+    parts = _LOCAL_IMAGE_MARKDOWN_RE.split(content, maxsplit=1)
+    before = parts[0].rstrip()
+    after = parts[1].lstrip() if len(parts) > 1 else ""
+    try:
+        await editor.fill(before)
+    except Exception:
+        await editor.click()
+        await page.keyboard.press("Control+A")
+        await page.keyboard.insert_text(before)
+    await editor.click()
+    await page.keyboard.press("Control+End")
+    await page.keyboard.press("Enter")
+
+    uploaded = False
+    inputs = page.locator("input[type='file'][accept*='image']")
+    for index in range(await inputs.count()):
+        try:
+            await inputs.nth(index).set_input_files(str(image_path), timeout=3000)
+            uploaded = True
+            break
+        except Exception:
+            continue
+    if not uploaded:
+        for selector in (
+            "button:has-text('图片')",
+            "[role='button']:has-text('图片')",
+            "button[aria-label*='图片']",
+        ):
+            button = page.locator(selector).first
+            try:
+                if not await button.is_visible(timeout=500):
+                    continue
+                async with page.expect_file_chooser(timeout=3000) as chooser_info:
+                    await button.click()
+                await (await chooser_info.value).set_files(str(image_path))
+                uploaded = True
+                break
+            except Exception:
+                continue
+    if not uploaded:
+        raise ZhihuPublishError(
+            "知乎编辑器未找到图片上传入口，本地图片未插入，已停止发布"
+        )
+    await page.wait_for_timeout(3500)
+    if after:
+        await editor.click()
+        await page.keyboard.press("Control+End")
+        await page.keyboard.press("Enter")
+        await page.keyboard.insert_text(after)
 
 
 def _is_publish_response(response: Any) -> bool:
@@ -203,7 +270,9 @@ def _check_public_page_snapshot(
         "登录知乎",
         "注册知乎",
     )
-    if any(_normalized_title(marker) in normalized_body for marker in verification_markers):
+    if any(
+        _normalized_title(marker) in normalized_body for marker in verification_markers
+    ):
         raise ZhihuPublicVerificationUnavailable(
             "知乎公开页面触发登录或安全验证，服务器无法二次核验"
         )
@@ -331,9 +400,9 @@ async def _verify_public_article_page(
             open_graph_title = ""
             try:
                 open_graph_title = (
-                    await page.locator("meta[property='og:title']")
-                    .first
-                    .get_attribute("content", timeout=1500)
+                    await page.locator("meta[property='og:title']").first.get_attribute(
+                        "content", timeout=1500
+                    )
                     or ""
                 )
             except Exception:
@@ -538,6 +607,19 @@ async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> s
     )
     playwright = None
     context = None
+    image_path = None
+    if article.local_image_id:
+        from app.db.session import SessionLocal
+        from app.models.local_media import LocalMediaAsset
+        from app.services.local_media import asset_path
+
+        async with SessionLocal() as db:
+            media = await db.get(LocalMediaAsset, article.local_image_id)
+            if media is None:
+                raise ZhihuPublishError("文章引用的本地图片已不存在")
+            image_path = asset_path(media)
+            if not image_path.is_file():
+                raise ZhihuPublishError("文章引用的本地图片文件已丢失")
     browser_lock = get_account_browser_lock(account.id)
     if browser_lock.locked():
         raise ZhihuPublishError("该账号正在登录或执行其他发布任务，请稍后重试")
@@ -594,12 +676,7 @@ async def publish_article_to_zhihu(account: ZhihuAccount, article: Article) -> s
             raise ZhihuPublishError("知乎创作页面结构发生变化，未找到标题或正文编辑器")
 
         await title.fill(article.title)
-        try:
-            await editor.fill(article.content)
-        except Exception:
-            await editor.click()
-            await page.keyboard.press("Control+A")
-            await page.keyboard.insert_text(article.content)
+        await _fill_article_editor(page, editor, article.content, image_path)
         await page.wait_for_timeout(800)
 
         publish_response: asyncio.Future[Any] = (

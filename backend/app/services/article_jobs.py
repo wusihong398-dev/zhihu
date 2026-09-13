@@ -17,6 +17,7 @@ from app.models.article_job import (
     ArticleOutputMode,
 )
 from app.models.keyword import AccountKeyword
+from app.models.local_media import LocalMediaAsset, LocalMediaKind
 from app.models.product import PromotedProduct
 from app.models.system_setting import SystemSetting
 from app.models.user_ai_provider import UserAIProviderConfig
@@ -27,6 +28,12 @@ from app.services.ai_providers import (
 )
 from app.services.secret_box import decrypt_secret
 from app.services.keyword_recycle import mark_keyword_used
+from app.services.local_media import (
+    LOCAL_IMAGE_VARIABLE,
+    expand_local_image_prompt,
+    insert_local_image,
+    text_content_length,
+)
 from app.services.zhihu_publisher import (
     ZhihuLoginRequired,
     ZhihuPublishError,
@@ -43,7 +50,7 @@ _terminal_statuses = {
 
 
 def article_content_length(value: str) -> int:
-    return len(re.sub(r"\s+", "", value))
+    return text_content_length(value)
 
 
 def start_article_job(job_id: uuid.UUID) -> None:
@@ -175,6 +182,8 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
         payload = json.loads(job.payload_json)
         account = await db.get(ZhihuAccount, uuid.UUID(payload["account_id"]))
         product = await db.get(PromotedProduct, uuid.UUID(payload["product_id"]))
+        if account is None or product is None:
+            raise RuntimeError("生成任务所需的账号或商品已不存在")
         config_result = await db.execute(
             select(UserAIProviderConfig).where(
                 UserAIProviderConfig.user_id == job.user_id,
@@ -191,21 +200,35 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
             )
         )
         keywords = {item.id: item for item in keyword_result.scalars()}
-        if account is None or product is None or config is None:
+        if config is None:
             raise RuntimeError("生成任务所需的账号、商品或 AI 配置已不存在")
         definition = PROVIDERS.get(payload["provider"])
         if definition is None or not config.enabled or not config.api_key_encrypted:
             raise RuntimeError("AI 平台未启用或 API Key 已删除")
         api_key = decrypt_secret(config.api_key_encrypted)
+        image_filters = [
+            LocalMediaAsset.user_id == job.user_id,
+            LocalMediaAsset.kind == LocalMediaKind.image,
+        ]
+        image_folder_id = payload.get("local_image_folder_id")
+        if image_folder_id:
+            image_filters.append(
+                LocalMediaAsset.folder_id == uuid.UUID(image_folder_id)
+            )
+        image_result = await db.execute(select(LocalMediaAsset).where(*image_filters))
+        images = list(image_result.scalars())
+        image_requested = LOCAL_IMAGE_VARIABLE in payload["content_prompt"]
+        if image_requested and not images:
+            raise RuntimeError("正文提示词使用了{本地图片}，但图片库没有可用图片")
         specs = [
-            keywords[keyword_id]
+            (keywords[keyword_id], random.choice(images) if image_requested else None)
             for keyword_id in keyword_ids
             if keyword_id in keywords
             for _ in range(payload["articles_per_keyword"])
         ]
         completed_at_start = job.completed_count
 
-    for index, keyword in enumerate(
+    for index, (keyword, local_image) in enumerate(
         specs[completed_at_start:], start=completed_at_start
     ):
         permission = await _wait_for_permission(job_id)
@@ -220,8 +243,9 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
         title_instruction = _expand_prompt(
             payload["title_prompt"], keyword.keyword, product
         )
-        content_instruction = _expand_prompt(
-            payload["content_prompt"], keyword.keyword, product
+        content_instruction = expand_local_image_prompt(
+            _expand_prompt(payload["content_prompt"], keyword.keyword, product),
+            local_image is not None,
         )
         if product.content_requirements:
             content_instruction += f"\n补充要求：{product.content_requirements}"
@@ -289,6 +313,8 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
                 if payload["output_mode"] == ArticleOutputMode.immediate.value
                 else ArticleStatus.draft
             )
+            article.local_image_id = local_image.id if local_image else None
+            article.content = insert_local_image(content, local_image)
 
         if article.status == ArticleStatus.ready:
             if not account.enabled:
@@ -413,7 +439,10 @@ async def _run_publish_job(job_id: uuid.UUID) -> None:
             job.completed_count += 1
             await db.commit()
 
-        if index + 1 < len(article_ids) and await _wait_for_permission(job_id) not in _terminal_statuses:
+        if (
+            index + 1 < len(article_ids)
+            and await _wait_for_permission(job_id) not in _terminal_statuses
+        ):
             await _publish_delay()
 
     async with SessionLocal() as db:

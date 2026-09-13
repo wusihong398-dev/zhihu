@@ -7,11 +7,11 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.13.0">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.13.0">
-  <link rel="stylesheet" href="/assets/login.css?v=0.13.0">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.13.0">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.13.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.14.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.14.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.14.0">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.14.0">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.14.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -75,6 +75,7 @@
         <details class="nav-section" data-nav-section="article">
           <summary><span><i>▤</i>文章</span><small>›</small></summary>
           <div class="nav-children">
+            <button class="nav-item" data-page="local-media">本地图片库</button>
             <button class="nav-item" data-page="article-generate">生成文章</button>
             <button class="nav-item" data-page="articles" data-article-status="draft">草稿文章</button>
             <button class="nav-item" data-page="articles" data-article-status="ready">待发布文章</button>
@@ -138,10 +139,11 @@
           <div id="overview-empty" class="empty-state" hidden><span>◎</span><h3>还没有知乎账号</h3><p>添加第一个账号后，即可设置每天的文章和回答数量。</p><button class="button button-primary" data-open-account>添加账号</button></div>
         </section>
         <section class="panel module-overview-panel">
-          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">15 个模块</span></div>
+          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">16 个模块</span></div>
           <div class="module-shortcuts">
             <button data-page-link="products"><span>▣</span><strong>推广商品</strong><small>商品资料与推广要求</small></button>
             <button data-page-link="keywords"><span>⌕</span><strong>关键词中心</strong><small>采集、文件夹与筛选</small></button>
+            <button data-page-link="local-media"><span>▧</span><strong>本地图片库</strong><small>图片、压缩包与随机调用</small></button>
             <button data-page-link="article-generate"><span>✦</span><strong>文章生成</strong><small>提示词与批量生成</small></button>
             <button data-page-link="articles"><span>▤</span><strong>文章列表</strong><small>草稿、审核与发布状态</small></button>
             <button data-page-link="questions"><span>?</span><strong>问题采集</strong><small>行业问题与关键词匹配</small></button>
@@ -264,6 +266,32 @@
         </section>
       </div>
 
+      <div id="local-media-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">用户独立图片素材</span><h1>本地图片库</h1><p>把本地图片或压缩包上传到服务器，按文件夹管理；文章提示词使用 {本地图片} 时随机插入一张。</p></div><button id="media-folder-create" class="button button-primary" type="button">＋ 新建文件夹</button></section>
+        <section class="panel media-upload-panel">
+          <form id="media-upload-form" class="media-upload-form">
+            <div><label for="media-upload-folder">上传到文件夹</label><select id="media-upload-folder"><option value="">未归档</option></select></div>
+            <label class="media-file-picker" for="media-upload-files"><strong>选择图片或压缩包</strong><small>支持 JPG、PNG、WebP、GIF、BMP、TIFF、AVIF，以及 ZIP、TAR、TAR.GZ、TGZ；压缩包上传后手动解压。</small><input id="media-upload-files" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,image/avif,.zip,.tar,.tar.gz,.tgz"></label>
+            <button id="media-upload-submit" class="button button-primary" type="submit">上传到服务器</button>
+          </form>
+          <p id="media-upload-error" class="form-error"></p>
+        </section>
+        <section class="panel media-library-panel">
+          <div class="media-toolbar">
+            <label class="search-box">⌕<input id="media-search" placeholder="搜索图片或压缩包名称"></label>
+            <select id="media-folder-filter"><option value="all">全部文件</option><option value="unfiled">未归档</option></select>
+            <select id="media-kind-filter"><option value="">图片和压缩包</option><option value="image">仅图片</option><option value="archive">仅压缩包</option></select>
+            <button id="media-folder-rename" class="button button-ghost" type="button">文件夹改名</button>
+            <button id="media-folder-delete" class="button button-ghost danger-text" type="button">删除文件夹</button>
+            <strong id="media-total">共 0 个文件</strong>
+          </div>
+          <div class="selection-toolbar"><label class="select-all"><input id="media-select-all" type="checkbox"> 全选当前页</label><span id="media-selected-count">已选 0 个</span><button id="media-delete-selected" class="button button-ghost danger-text" type="button" disabled>删除所选</button></div>
+          <div id="media-list" class="media-grid"></div>
+          <div id="media-empty" class="empty-state"><span>▧</span><h3>图片库为空</h3><p>选择图片或压缩包上传，压缩包需要点击“解压”后才会成为可调用图片。</p></div>
+          <div id="media-pagination" class="pagination" hidden><button id="media-prev" class="button button-ghost" type="button">上一页</button><span id="media-page-info">第 1 / 1 页</span><button id="media-next" class="button button-ghost" type="button">下一页</button></div>
+        </section>
+      </div>
+
       <div id="article-generate-page" class="page">
         <section class="page-heading"><div><span class="eyebrow">AI 批量内容生产</span><h1>文章生成</h1><p>选择账号、关键词文件夹、推广商品和 AI 模型，按照提示词批量生成知乎文章。</p></div></section>
         <form id="article-generate-form" class="panel article-generator">
@@ -283,6 +311,7 @@
                 <div><label for="article-generate-product">推广商品</label><select id="article-generate-product" required><option value="">请选择启用的商品</option></select></div>
                 <div><label for="article-generate-provider">AI 平台与模型</label><select id="article-generate-provider" required><option value="">请选择已配置的平台</option></select><p class="field-help">未配置时，请先进入左侧“AI 配置”保存并测试当前用户的 API Key。</p></div>
               </div>
+              <div><label for="article-local-image-folder">本地图片调用范围</label><select id="article-local-image-folder"><option value="">全部图片库</option></select><p class="field-help">正文提示词包含 {本地图片} 时，每篇文章会从此范围随机调用一张；不写变量则不会插图。</p></div>
               <div class="field-grid three-fields">
                 <div><label for="articles-per-keyword">每个关键词生成</label><input id="articles-per-keyword" type="number" min="1" max="5" value="1" required></div>
                 <div><label for="article-min-length">最少字数</label><input id="article-min-length" type="number" min="100" max="10000" value="800" required></div>
@@ -292,7 +321,7 @@
               <textarea id="article-title-prompt" rows="3" maxlength="10000">围绕{关键词}拟一个自然、有吸引力、适合知乎阅读的标题，不要夸大承诺。</textarea>
               <label for="article-content-prompt">正文提示词</label>
               <textarea id="article-content-prompt" rows="6" maxlength="20000">围绕{关键词}写一篇专业、自然、有实际帮助的知乎文章。商品名称：{商品名称}。商品简介：{商品简介}。核心卖点：{商品卖点}。目标人群：{目标人群}。推广链接：{推广链接}。根据这些真实资料进行适度推荐，避免生硬广告和禁用表述。</textarea>
-              <p class="field-help">可用变量：{关键词}、{商品名称}、{商品分类}、{商品简介}、{商品卖点}、{目标人群}、{推广链接}、{内容要求}、{禁用表述}</p>
+              <p class="field-help">可用变量：{关键词}、{商品名称}、{商品分类}、{商品简介}、{商品卖点}、{目标人群}、{推广链接}、{内容要求}、{禁用表述}、{本地图片}</p>
               <div><label for="article-output-mode">生成完成后</label><select id="article-output-mode"><option value="draft">保存到草稿库</option><option value="immediate">立即发布到知乎（需账号已登录）</option></select></div>
             </div>
             <div class="article-keyword-picker">
@@ -484,8 +513,8 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.13.0" defer></script>
-  <script src="/assets/qa.js?v=0.13.0" defer></script>
-  <script src="/assets/operations.js?v=0.13.0" defer></script>
+  <script src="/assets/app.js?v=0.14.0" defer></script>
+  <script src="/assets/qa.js?v=0.14.0" defer></script>
+  <script src="/assets/operations.js?v=0.14.0" defer></script>
 </body>
 </html>

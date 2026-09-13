@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import re
 import unicodedata
 import uuid
@@ -15,6 +16,7 @@ from app.models.account import AccountStatus, ZhihuAccount
 from app.models.article import Article, ArticleStatus
 from app.models.article_job import ArticleJob, ArticleJobStatus, ArticleJobType
 from app.models.keyword import AccountKeyword
+from app.models.local_media import LocalMediaAsset, LocalMediaFolder, LocalMediaKind
 from app.models.product import PromotedProduct
 from app.models.user import User, UserRole
 from app.models.user_ai_provider import UserAIProviderConfig
@@ -40,6 +42,12 @@ from app.services.ai_providers import (
 )
 from app.services.secret_box import decrypt_secret
 from app.services.keyword_recycle import mark_keyword_used
+from app.services.local_media import (
+    LOCAL_IMAGE_VARIABLE,
+    expand_local_image_prompt,
+    insert_local_image,
+    text_content_length,
+)
 from app.services.zhihu_article_sync import (
     ZhihuArticleSyncError,
     ZhihuArticleSyncLoginRequired,
@@ -55,7 +63,31 @@ router = APIRouter(tags=["articles"], dependencies=[Depends(require_active_user)
 
 
 def _content_length(value: str) -> int:
-    return len(re.sub(r"\s+", "", value))
+    return text_content_length(value)
+
+
+async def _generation_images(
+    payload: ArticleGenerateRequest, user: User, db: AsyncSession
+) -> list[LocalMediaAsset]:
+    if LOCAL_IMAGE_VARIABLE not in payload.content_prompt:
+        return []
+    filters = [
+        LocalMediaAsset.user_id == user.id,
+        LocalMediaAsset.kind == LocalMediaKind.image,
+    ]
+    if payload.local_image_folder_id:
+        folder = await db.get(LocalMediaFolder, payload.local_image_folder_id)
+        if folder is None or folder.user_id != user.id:
+            raise HTTPException(status_code=404, detail="本地图片文件夹不存在")
+        filters.append(LocalMediaAsset.folder_id == payload.local_image_folder_id)
+    result = await db.execute(select(LocalMediaAsset).where(*filters))
+    images = list(result.scalars())
+    if not images:
+        raise HTTPException(
+            status_code=422,
+            detail="正文提示词使用了{本地图片}，但所选图片范围没有可用图片",
+        )
+    return images
 
 
 def _sync_title_key(value: str) -> str:
@@ -230,6 +262,7 @@ async def generate_articles(
     keywords_by_id = {item.id: item for item in keyword_result.scalars()}
     if len(keywords_by_id) != len(set(payload.keyword_ids)):
         raise HTTPException(status_code=404, detail="部分关键词不存在或不属于当前账号")
+    images = await _generation_images(payload, user, db)
 
     generated: list[Article] = []
     forbidden_terms = [
@@ -259,13 +292,19 @@ async def generate_articles(
     for keyword_id in payload.keyword_ids:
         keyword = keywords_by_id[keyword_id]
         for _ in range(payload.articles_per_keyword):
+            local_image = random.choice(images) if images else None
             title_instruction = expand(payload.title_prompt, keyword.keyword)
-            content_instruction = expand(payload.content_prompt, keyword.keyword)
+            content_instruction = expand_local_image_prompt(
+                expand(payload.content_prompt, keyword.keyword),
+                local_image is not None,
+            )
             if product.content_requirements:
                 content_instruction += f"\n补充要求：{product.content_requirements}"
             if product.forbidden_terms:
                 content_instruction += f"\n不得出现：{product.forbidden_terms}"
-            generation_specs.append((keyword, title_instruction, content_instruction))
+            generation_specs.append(
+                (keyword, local_image, title_instruction, content_instruction)
+            )
 
     semaphore = asyncio.Semaphore(5)
 
@@ -288,10 +327,10 @@ async def generate_articles(
     generation_results = await asyncio.gather(
         *(
             generate_one(title_instruction, content_instruction)
-            for _, title_instruction, content_instruction in generation_specs
+            for _, _, title_instruction, content_instruction in generation_specs
         )
     )
-    for (keyword, _, _), (title, content, generation_error) in zip(
+    for (keyword, local_image, _, _), (title, content, generation_error) in zip(
         generation_specs, generation_results, strict=True
     ):
         article = Article(
@@ -312,9 +351,9 @@ async def generate_articles(
         else:
             article.title = title
             article.content = content
-            article.content_length = _content_length(article.content)
+            article.content_length = _content_length(content)
             found_term = next(
-                (term for term in forbidden_terms if term in article.content), None
+                (term for term in forbidden_terms if term in content), None
             )
             if article.content_length < payload.min_length:
                 article.status = ArticleStatus.failed
@@ -327,6 +366,8 @@ async def generate_articles(
                 article.error_message = f"正文包含禁用表述：{found_term}"
             else:
                 article.status = ArticleStatus.draft
+                article.local_image_id = local_image.id if local_image else None
+                article.content = insert_local_image(content, local_image)
                 mark_keyword_used(
                     keyword,
                     recycle=account.recycle_keywords_after_use,
@@ -391,6 +432,7 @@ async def create_generation_job(
     )
     if len(list(keyword_result.scalars())) != len(set(payload.keyword_ids)):
         raise HTTPException(status_code=404, detail="部分关键词不存在或不属于当前账号")
+    await _generation_images(payload, user, db)
     active = await db.scalar(
         select(func.count(ArticleJob.id)).where(
             ArticleJob.user_id == user.id,
@@ -539,7 +581,8 @@ async def sync_published_articles(
     unmatched_failed_count = sum(
         1
         for article in local_articles
-        if article.status == ArticleStatus.failed and article.id not in matched_local_ids
+        if article.status == ArticleStatus.failed
+        and article.id not in matched_local_ids
     )
     return ArticleSyncResponse(
         scanned_count=len(remote_articles),

@@ -39,6 +39,12 @@ class Article(Base):
         nullable=True,
         index=True,
     )
+    local_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("local_media_assets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     keyword_text: Mapped[str] = mapped_column(String(255), default="")
     product_name: Mapped[str] = mapped_column(String(120), default="")
     title: Mapped[str] = mapped_column(String(300), default="")

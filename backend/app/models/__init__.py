@@ -21,6 +21,7 @@ from app.models.keyword_job import (
     KeywordJobSource,
     KeywordJobStatus,
 )
+from app.models.local_media import LocalMediaAsset, LocalMediaFolder, LocalMediaKind
 from app.models.product import PromotedProduct
 from app.models.question import QuestionStatus, ZhihuQuestion
 from app.models.schedule import OperationSchedule, ScheduleRunStatus, ScheduleTaskType
@@ -51,6 +52,9 @@ __all__ = [
     "KeywordJobSource",
     "KeywordJobStatus",
     "KeywordSource",
+    "LocalMediaAsset",
+    "LocalMediaFolder",
+    "LocalMediaKind",
     "PromotedProduct",
     "QuestionStatus",
     "User",

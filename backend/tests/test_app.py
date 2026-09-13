@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.13.0"
+        assert version.json()["version"] == "0.14.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -31,9 +31,7 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     article_page = index.split('<div id="articles-page"', 1)[1].split(
         '<div id="article-publish-page"', 1
     )[0]
-    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
-        encoding="utf-8"
-    )
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(encoding="utf-8")
     assert "全部知乎账号" not in article_page
     assert "全部状态" not in article_page
     assert 'data-status="draft"' in article_page
@@ -90,9 +88,7 @@ def test_operations_pages_are_functional_modules() -> None:
 
 def test_prompt_toolbar_has_distinct_update_and_save_as_actions() -> None:
     index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
-    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
-        encoding="utf-8"
-    )
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(encoding="utf-8")
     assert 'id="prompt-template-update"' in index
     assert "保存当前模板" in index
     assert "另存为新模板" in index
@@ -102,9 +98,7 @@ def test_prompt_toolbar_has_distinct_update_and_save_as_actions() -> None:
 
 def test_navigation_is_grouped_and_keyword_recycle_is_functional() -> None:
     index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
-    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
-        encoding="utf-8"
-    )
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(encoding="utf-8")
     assert 'data-nav-section="account"' in index
     assert 'data-nav-section="keyword"' in index
     assert 'data-nav-section="article"' in index
@@ -117,3 +111,16 @@ def test_navigation_is_grouped_and_keyword_recycle_is_functional() -> None:
     assert "/keywords/bulk-recycle" in script
     assert "/keywords/bulk-restore" in script
     assert "/keywords/auto-restore" in script
+
+
+def test_local_media_page_and_generation_variable_are_exposed() -> None:
+    index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(encoding="utf-8")
+    assert 'data-page="local-media"' in index
+    assert 'id="local-media-page"' in index
+    assert 'id="media-upload-form"' in index
+    assert 'id="article-local-image-folder"' in index
+    assert "{本地图片}" in index
+    assert "/local-media/upload" in script
+    assert "/extract" in script
+    assert "local_image_folder_id" in script

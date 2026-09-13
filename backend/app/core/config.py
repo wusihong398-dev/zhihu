@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://redis:6379/0"
     account_data_root: Path = Path("/var/lib/totod/accounts")
+    media_data_root: Path = Path("/var/lib/totod/uploads")
+    public_base_url: str = "https://totod.cn"
     default_timezone: str = "Asia/Shanghai"
     chromium_executable: str = "/usr/bin/chromium"
 

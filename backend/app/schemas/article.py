@@ -52,6 +52,7 @@ class ArticleGenerateRequest(BaseModel):
         default=DEFAULT_CONTENT_PROMPT, min_length=1, max_length=20000
     )
     output_mode: ArticleOutputMode = ArticleOutputMode.draft
+    local_image_folder_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def validate_batch(self):
@@ -70,6 +71,7 @@ class ArticleRead(BaseModel):
     account_name: str = ""
     keyword_id: uuid.UUID | None
     product_id: uuid.UUID | None
+    local_image_id: uuid.UUID | None
     keyword_text: str
     product_name: str
     title: str

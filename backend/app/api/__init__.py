@@ -5,6 +5,7 @@ from app.api.article_prompts import router as article_prompts_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.keywords import router as keywords_router
+from app.api.local_media import router as local_media_router
 from app.api.products import router as products_router
 from app.api.qa import router as qa_router
 from app.api.operations import router as operations_router
@@ -18,6 +19,7 @@ __all__ = [
     "auth_router",
     "health_router",
     "keywords_router",
+    "local_media_router",
     "products_router",
     "qa_router",
     "operations_router",
