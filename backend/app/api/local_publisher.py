@@ -108,19 +108,15 @@ async def client_accounts(
     device: LocalPublisherDevice = Depends(require_local_device),
 ) -> list[LocalPublisherAccountRead]:
     user = await db.get(User, device.user_id)
-    owner_filter = (
-        ZhihuAccount.owner_user_id.is_(None)
-        if user and user.role == UserRole.admin
-        else ZhihuAccount.owner_user_id == device.user_id
-    )
+    filters = [ZhihuAccount.enabled.is_(True)]
+    if user is None or user.role != UserRole.admin:
+        filters.append(ZhihuAccount.owner_user_id == device.user_id)
     accounts = list(
         (
             await db.execute(
-                select(ZhihuAccount).where(
-                    owner_filter,
-                    ZhihuAccount.enabled.is_(True),
-                    ZhihuAccount.answer_publish_mode == "local",
-                )
+                select(ZhihuAccount)
+                .where(*filters)
+                .order_by(ZhihuAccount.created_at, ZhihuAccount.id)
             )
         ).scalars()
     )
@@ -130,6 +126,7 @@ async def client_accounts(
             display_name=item.display_name,
             remark=item.remark,
             timezone=item.timezone,
+            answer_publish_mode=item.answer_publish_mode,
         )
         for item in accounts
     ]
@@ -142,6 +139,7 @@ async def claim_task(
     device: LocalPublisherDevice = Depends(require_local_device),
 ) -> LocalPublisherTaskRead | None:
     now = datetime.now(UTC)
+    user = await db.get(User, device.user_id)
     await db.execute(
         update(LocalAnswerPublishTask)
         .where(
@@ -150,14 +148,16 @@ async def claim_task(
         )
         .values(status="queued", leased_device_id=None, lease_expires_at=None)
     )
+    task_filters = [
+        LocalAnswerPublishTask.status == "queued",
+        AnswerJob.status.in_([AnswerJobStatus.pending, AnswerJobStatus.running]),
+    ]
+    if user is None or user.role != UserRole.admin:
+        task_filters.append(LocalAnswerPublishTask.user_id == device.user_id)
     task_query = (
         select(LocalAnswerPublishTask)
         .join(AnswerJob, AnswerJob.id == LocalAnswerPublishTask.job_id)
-        .where(
-            LocalAnswerPublishTask.user_id == device.user_id,
-            LocalAnswerPublishTask.status == "queued",
-            AnswerJob.status.in_([AnswerJobStatus.pending, AnswerJobStatus.running]),
-        )
+        .where(*task_filters)
     )
     if account_id is not None:
         task_query = task_query.where(LocalAnswerPublishTask.account_id == account_id)
@@ -212,7 +212,6 @@ async def _leased_task(
     task = await db.get(LocalAnswerPublishTask, task_id)
     if (
         task is None
-        or task.user_id != device.user_id
         or task.leased_device_id != device.id
         or task.status != "leased"
     ):

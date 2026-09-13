@@ -53,6 +53,14 @@ def test_local_publisher_device_claim_and_success_result(monkeypatch) -> None:
             ).json()
             assert account["answer_publish_mode"] == "local"
             account_id = account["id"]
+            server_account = client.post(
+                "/api/accounts",
+                json={
+                    "display_name": "尚未切换发布方式的账号",
+                    "daily_answer_limit": 5,
+                    "answer_publish_mode": "server",
+                },
+            ).json()
             collected = client.post(
                 f"/api/accounts/{account_id}/questions/collect",
                 json={"keywords": ["测试"], "target_count": 1},
@@ -85,7 +93,13 @@ def test_local_publisher_device_claim_and_success_result(monkeypatch) -> None:
             accounts = client.get(
                 "/api/local-publisher/client/accounts", headers=device_headers
             ).json()
-            assert [item["id"] for item in accounts] == [account_id]
+            account_modes = {
+                item["id"]: item["answer_publish_mode"] for item in accounts
+            }
+            assert account_modes == {
+                account_id: "local",
+                server_account["id"]: "server",
+            }
 
             current["user"] = ADMIN
             other_user = client.post(

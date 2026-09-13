@@ -149,6 +149,14 @@ class PublisherWorker(threading.Thread):
             elif command == "start":
                 self.account_id = payload
                 try:
+                    account = next(
+                        (item for item in self.accounts if item["id"] == payload), None
+                    )
+                    if not account or account.get("answer_publish_mode") != "local":
+                        raise RuntimeError(
+                            "该账号尚未启用本地发布，请在 TOTOD 后台编辑账号，"
+                            "将回答发布方式改为“Windows 本地客户端”"
+                        )
                     context = self.ensure_context(payload)
                     if not self.is_logged_in(context):
                         raise RuntimeError("该账号尚未在本地 Edge 登录知乎，请先点击“登录所选账号”")
@@ -166,7 +174,13 @@ class PublisherWorker(threading.Thread):
         try:
             accounts = api_request(self.server, self.token, "/local-publisher/client/accounts")
             self.emit("accounts", accounts)
-            self.emit("status", f"已连接服务器，可用本地发布账号 {len(accounts)} 个")
+            local_count = sum(
+                item.get("answer_publish_mode") == "local" for item in accounts
+            )
+            self.emit(
+                "status",
+                f"已连接服务器，共 {len(accounts)} 个账号，其中本地发布 {local_count} 个",
+            )
         except Exception as exc:
             self.emit("error", str(exc))
 
@@ -408,7 +422,12 @@ class App:
                 break
             if kind == "accounts":
                 self.accounts = value
-                self.account["values"] = [f"{item['display_name']}  ({item['id'][:8]})" for item in value]
+                self.account["values"] = [
+                    f"{item['display_name']}  "
+                    f"[{'本地发布' if item.get('answer_publish_mode') == 'local' else '需切换为本地发布'}]  "
+                    f"({item['id'][:8]})"
+                    for item in value
+                ]
                 if value:
                     self.account.current(0)
             elif kind == "status":

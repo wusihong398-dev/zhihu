@@ -27,6 +27,7 @@ class LocalPublisherAccountRead(BaseModel):
     display_name: str
     remark: str
     timezone: str
+    answer_publish_mode: str
 
 
 class LocalPublisherTaskRead(BaseModel):
@@ -50,4 +51,3 @@ class LocalPublisherTaskResult(BaseModel):
 
 class LocalPublisherHeartbeatRead(BaseModel):
     lease_expires_at: datetime
-
