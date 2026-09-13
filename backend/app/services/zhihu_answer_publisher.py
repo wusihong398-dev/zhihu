@@ -19,6 +19,10 @@ class ZhihuAnswerLoginRequired(ZhihuAnswerPublishError):
     pass
 
 
+class ZhihuAnswerRiskControlError(ZhihuAnswerPublishError):
+    pass
+
+
 _ANSWER_EDITOR_SELECTORS = (
     ".AnswerForm-editor .ProseMirror[contenteditable='true']",
     ".AnswerForm-editor [contenteditable='true']",
@@ -108,6 +112,21 @@ def _answer_unavailable_reason(body: str) -> str | None:
     return None
 
 
+def _answer_risk_control_reason(body: str) -> str | None:
+    compact = "".join(body.split())
+    if (
+        '"code":40362' in compact
+        or "当前请求存在异常" in compact
+        or "暂时限制本次访问" in compact
+    ):
+        return (
+            "知乎风控 40362：当前服务器访问被临时限制。本批任务已停止，请勿连续重试；"
+            "请先在“知乎账号→登录官网”中检查登录及安全验证，稍后再试。"
+            "若仍出现 40362，请改用该账号常用网络人工发布"
+        )
+    return None
+
+
 async def _visible_feedback(page: Any) -> str | None:
     for selector in (
         "[role='alert']",
@@ -178,6 +197,9 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
         if any(marker in body for marker in ("安全验证", "验证码", "登录知乎")):
             raise ZhihuAnswerLoginRequired("知乎要求重新登录或完成安全验证")
 
+        risk_control_reason = _answer_risk_control_reason(body)
+        if risk_control_reason:
+            raise ZhihuAnswerRiskControlError(risk_control_reason)
         unavailable_reason = _answer_unavailable_reason(body)
         if unavailable_reason:
             raise ZhihuAnswerPublishError(unavailable_reason)

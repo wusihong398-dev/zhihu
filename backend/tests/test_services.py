@@ -21,6 +21,7 @@ from app.services.zhihu_article_sync import _published_article_from_payload
 from app.services.zhihu_answer_publisher import (
     _WRITE_ANSWER_SELECTORS,
     _answer_id_from_payload,
+    _answer_risk_control_reason,
     _answer_unavailable_reason,
 )
 from app.services.zhihu_login import has_zhihu_auth_cookie
@@ -272,6 +273,16 @@ def test_answer_publisher_supports_new_write_button_and_specific_reasons() -> No
         "当前知乎账号已经回答过该问题，请在知乎修改原回答"
     )
     assert _answer_unavailable_reason("普通问题页面") is None
+
+
+def test_answer_publisher_recognizes_zhihu_risk_control_40362() -> None:
+    reason = _answer_risk_control_reason(
+        '{"error":{"message":"您当前请求存在异常，暂时限制本次访问","code":40362}}'
+    )
+    assert reason is not None
+    assert "知乎风控 40362" in reason
+    assert "本批任务已停止" in reason
+    assert _answer_risk_control_reason("普通知乎问题页面") is None
 
 
 def test_zhihu_public_url_does_not_accept_editor_url() -> None:

@@ -20,6 +20,7 @@ from app.services.secret_box import decrypt_secret
 from app.services.zhihu_answer_publisher import (
     ZhihuAnswerLoginRequired,
     ZhihuAnswerPublishError,
+    ZhihuAnswerRiskControlError,
     publish_answer_to_zhihu,
 )
 
@@ -291,6 +292,7 @@ async def _run_publish(job_id: uuid.UUID) -> None:
         failure = None
         published_url = None
         login_failed = False
+        risk_controlled = False
         if account is None or not account.enabled:
             failure = "知乎账号不存在或已停用"
         elif not answer.content.strip():
@@ -301,6 +303,9 @@ async def _run_publish(job_id: uuid.UUID) -> None:
             except ZhihuAnswerLoginRequired as exc:
                 failure = str(exc)
                 login_failed = True
+            except ZhihuAnswerRiskControlError as exc:
+                failure = str(exc)
+                risk_controlled = True
             except ZhihuAnswerPublishError as exc:
                 failure = str(exc)
 
@@ -329,7 +334,14 @@ async def _run_publish(job_id: uuid.UUID) -> None:
                 if current_account:
                     current_account.status = AccountStatus.online
             current.completed_count += 1
+            if risk_controlled:
+                current.status = AnswerJobStatus.failed
+                current.error_message = failure
+                current.current_item = None
+                current.completed_at = datetime.now(UTC)
             await db.commit()
+        if risk_controlled:
+            return
         if index + 1 < len(answer_ids) and await _permission(job_id) not in _terminal:
             await _publish_delay()
     await _finish(job_id)
