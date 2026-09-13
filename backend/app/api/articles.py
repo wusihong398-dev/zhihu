@@ -39,6 +39,7 @@ from app.services.ai_providers import (
     generate_article_content,
 )
 from app.services.secret_box import decrypt_secret
+from app.services.keyword_recycle import mark_keyword_used
 from app.services.zhihu_article_sync import (
     ZhihuArticleSyncError,
     ZhihuArticleSyncLoginRequired,
@@ -223,6 +224,7 @@ async def generate_articles(
         select(AccountKeyword).where(
             AccountKeyword.account_id == account_id,
             AccountKeyword.id.in_(payload.keyword_ids),
+            AccountKeyword.is_recycled.is_(False),
         )
     )
     keywords_by_id = {item.id: item for item in keyword_result.scalars()}
@@ -325,6 +327,10 @@ async def generate_articles(
                 article.error_message = f"正文包含禁用表述：{found_term}"
             else:
                 article.status = ArticleStatus.draft
+                mark_keyword_used(
+                    keyword,
+                    recycle=account.recycle_keywords_after_use,
+                )
         db.add(article)
         generated.append(article)
     await db.flush()
@@ -380,6 +386,7 @@ async def create_generation_job(
         select(AccountKeyword.id).where(
             AccountKeyword.account_id == account_id,
             AccountKeyword.id.in_(payload.keyword_ids),
+            AccountKeyword.is_recycled.is_(False),
         )
     )
     if len(list(keyword_result.scalars())) != len(set(payload.keyword_ids)):

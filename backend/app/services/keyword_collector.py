@@ -217,11 +217,13 @@ async def run_keyword_job(job_id: uuid.UUID) -> None:
         await session.commit()
 
         existing_result = await session.execute(
-            select(AccountKeyword.normalized_keyword).where(
+            select(AccountKeyword).where(
                 AccountKeyword.account_id == job.account_id
             )
         )
-        existing = set(existing_result.scalars())
+        existing = {
+            item.normalized_keyword: item for item in existing_result.scalars()
+        }
         destination = await session.get(KeywordJobDestination, job.id)
         destination_folder_id = destination.folder_id if destination else None
         seed_normalized = normalize_keyword(job.seed_keyword)
@@ -312,21 +314,29 @@ async def run_keyword_job(job_id: uuid.UUID) -> None:
                                     query,
                                 ),
                             )
-                        if normalized in existing or normalized == seed_normalized:
+                        if normalized == seed_normalized:
+                            continue
+                        existing_keyword = existing.get(normalized)
+                        if existing_keyword:
+                            if existing_keyword.is_recycled:
+                                existing_keyword.is_recycled = False
+                                existing_keyword.recycled_at = None
+                                job.collected_count += 1
+                            if job.collected_count >= job.target_count:
+                                break
                             continue
                         keyword_id = uuid.uuid4()
-                        session.add(
-                            AccountKeyword(
-                                id=keyword_id,
-                                account_id=job.account_id,
-                                keyword=candidate,
-                                normalized_keyword=normalized,
-                                source=source,
-                                seed_keyword=job.seed_keyword,
-                                parent_keyword=query,
-                                depth=depth + 1,
-                            )
+                        keyword_item = AccountKeyword(
+                            id=keyword_id,
+                            account_id=job.account_id,
+                            keyword=candidate,
+                            normalized_keyword=normalized,
+                            source=source,
+                            seed_keyword=job.seed_keyword,
+                            parent_keyword=query,
+                            depth=depth + 1,
                         )
+                        session.add(keyword_item)
                         if destination_folder_id:
                             session.add(
                                 KeywordFolderItem(
@@ -334,7 +344,7 @@ async def run_keyword_job(job_id: uuid.UUID) -> None:
                                     folder_id=destination_folder_id,
                                 )
                             )
-                        existing.add(normalized)
+                        existing[normalized] = keyword_item
                         job.collected_count += 1
                         if job.collected_count >= job.target_count:
                             break

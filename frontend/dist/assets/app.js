@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywords: [], keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -155,7 +155,7 @@
     try {
       state.accounts = await api("/accounts");
       renderAll();
-      if (state.page === "keywords" && $("#keyword-account").value) await loadKeywordData(true);
+      if (["keyword-collect", "keywords", "keyword-recycle"].includes(state.page) && state.keywordAccountId) await loadKeywordData(true);
       if (!silent) toast("账号数据已刷新");
     } catch (error) {
       if (state.token) toast(error.message, "error");
@@ -638,11 +638,38 @@
   }
 
   function renderKeywordAccountOptions() {
-    const select = $("#keyword-account");
-    const previous = select.value;
-    select.innerHTML = `<option value="">请先选择账号</option>${state.accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.display_name)}</option>`).join("")}`;
-    if (state.accounts.some((account) => account.id === previous)) select.value = previous;
-    else if (state.accounts.length === 1) select.value = state.accounts[0].id;
+    if (!state.accounts.some((account) => account.id === state.keywordAccountId)) {
+      state.keywordAccountId = state.accounts.length === 1 ? state.accounts[0].id : "";
+    }
+    const options = `<option value="">请选择知乎账号</option>${state.accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.display_name)}</option>`).join("")}`;
+    ["#keyword-account", "#keyword-library-account", "#keyword-recycle-account"].forEach((selector) => {
+      const select = $(selector);
+      select.innerHTML = options;
+      select.value = state.keywordAccountId;
+    });
+    renderRecycleSettings();
+  }
+
+  function selectKeywordAccount(accountId) {
+    state.keywordAccountId = accountId;
+    ["#keyword-account", "#keyword-library-account", "#keyword-recycle-account"].forEach((selector) => { $(selector).value = accountId; });
+    $("#folder-filter").value = "all";
+    state.keywordPage = 1;
+    state.recycleKeywordPage = 1;
+    state.selectedKeywords.clear();
+    state.selectedRecycledKeywords.clear();
+    renderRecycleSettings();
+    loadKeywordData(true);
+    if (state.page === "keyword-recycle") loadRecycledKeywords(true);
+  }
+
+  function renderRecycleSettings() {
+    const account = state.accounts.find((item) => item.id === state.keywordAccountId);
+    $("#keyword-auto-recycle").checked = account?.recycle_keywords_after_use ?? true;
+    $("#keyword-auto-restore").checked = account?.auto_restore_keywords ?? false;
+    $("#keyword-restore-threshold").value = account?.keyword_restore_threshold ?? 20;
+    $("#keyword-recycle-settings-save").disabled = !account;
+    $("#keyword-auto-restore-now").disabled = !account;
   }
 
   function renderKeywordJob() {
@@ -688,6 +715,7 @@
     $("#keyword-select-all").checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
     $("#keyword-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
     $("#keyword-move").disabled = state.selectedKeywords.size === 0;
+    $("#keyword-recycle").disabled = state.selectedKeywords.size === 0;
     $("#keyword-delete").disabled = state.selectedKeywords.size === 0;
   }
 
@@ -726,7 +754,7 @@
   }
 
   async function loadKeywordData(silent = false) {
-    const accountId = $("#keyword-account").value;
+    const accountId = state.keywordAccountId;
     window.clearTimeout(state.pollTimer);
     if (!accountId) {
       state.keywordJob = null;
@@ -737,12 +765,15 @@
     }
     try {
       const filter = $("#folder-filter").value;
-      const query = filter === "unfiled" ? "&unfiled=true" : !["all", ""].includes(filter) ? `&folder_id=${encodeURIComponent(filter)}` : "";
+      const params = new URLSearchParams();
+      if (filter === "unfiled") params.set("unfiled", "true");
+      else if (!["all", ""].includes(filter)) params.set("folder_id", filter);
+      if ($("#keyword-search").value.trim()) params.set("q", $("#keyword-search").value.trim());
       const offset = (state.keywordPage - 1) * state.keywordPageSize;
       const [job, folders, keywords] = await Promise.all([
         api(`/accounts/${accountId}/keyword-jobs/latest`),
         api(`/accounts/${accountId}/keyword-folders`),
-        api(`/accounts/${accountId}/keywords?limit=${state.keywordPageSize}&offset=${offset}${query}`)
+        api(`/accounts/${accountId}/keywords?limit=${state.keywordPageSize}&offset=${offset}&${params}`)
       ]);
       const totalPages = Math.max(1, Math.ceil(keywords.total / state.keywordPageSize));
       if (state.keywordPage > totalPages) {
@@ -762,7 +793,7 @@
   async function startKeywordJob(event) {
     event.preventDefault();
     const button = $("#keyword-start");
-    const accountId = $("#keyword-account").value;
+    const accountId = state.keywordAccountId;
     $("#keyword-error").textContent = "";
     if (!accountId) { $("#keyword-error").textContent = "请先选择知乎账号"; return; }
     setBusy(button, true, "正在创建任务…");
@@ -777,7 +808,7 @@
   }
 
   async function createKeywordFolder() {
-    const accountId = $("#keyword-account").value;
+    const accountId = state.keywordAccountId;
     if (!accountId) return toast("请先选择知乎账号", "error");
     const name = window.prompt("请输入新文件夹名称");
     if (!name?.trim()) return;
@@ -790,7 +821,7 @@
   }
 
   async function renameKeywordFolder() {
-    const accountId = $("#keyword-account").value;
+    const accountId = state.keywordAccountId;
     const folderId = $("#folder-filter").value;
     const folder = state.keywordFolders.find((item) => item.id === folderId);
     if (!folder) return;
@@ -804,7 +835,7 @@
   }
 
   async function deleteKeywordFolder() {
-    const accountId = $("#keyword-account").value;
+    const accountId = state.keywordAccountId;
     const folderId = $("#folder-filter").value;
     const folder = state.keywordFolders.find((item) => item.id === folderId);
     if (!folder || !window.confirm(`删除文件夹“${folder.name}”？其中的关键词会保留并移到未归档。`)) return;
@@ -820,7 +851,7 @@
     const ids = [...state.selectedKeywords];
     if (!ids.length) return;
     try {
-      const result = await api(`/accounts/${$("#keyword-account").value}/keywords/folder`, { method: "PATCH", body: JSON.stringify({ keyword_ids: ids, folder_id: $("#keyword-move-folder").value || null }) });
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/folder`, { method: "PATCH", body: JSON.stringify({ keyword_ids: ids, folder_id: $("#keyword-move-folder").value || null }) });
       state.selectedKeywords.clear();
       await loadKeywordData(true);
       toast(`已移动 ${result.affected_count} 个关键词`);
@@ -831,10 +862,115 @@
     const ids = [...state.selectedKeywords];
     if (!ids.length || !window.confirm(`确定删除选中的 ${ids.length} 个关键词吗？`)) return;
     try {
-      const result = await api(`/accounts/${$("#keyword-account").value}/keywords/bulk-delete`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/bulk-delete`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
       state.selectedKeywords.clear();
       await loadKeywordData(true);
       toast(`已删除 ${result.affected_count} 个关键词`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function recycleSelectedKeywords() {
+    const ids = [...state.selectedKeywords];
+    if (!ids.length) return;
+    try {
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/bulk-recycle`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
+      state.selectedKeywords.clear();
+      await loadKeywordData(true);
+      toast(`已将 ${result.affected_count} 个关键词转入回收库`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function updateRecycleKeywordSelection() {
+    const visibleIds = (state.recycledKeywords.items || []).map((item) => item.id);
+    const selectedVisible = visibleIds.filter((id) => state.selectedRecycledKeywords.has(id));
+    $("#recycle-keyword-selected-count").textContent = `已选 ${state.selectedRecycledKeywords.size} 个`;
+    $("#recycle-keyword-select-all").checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    $("#recycle-keyword-select-all").indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    $("#recycle-keyword-restore").disabled = state.selectedRecycledKeywords.size === 0;
+    $("#recycle-keyword-delete").disabled = state.selectedRecycledKeywords.size === 0;
+  }
+
+  function renderRecycledKeywords() {
+    const items = state.recycledKeywords.items || [];
+    $("#recycle-keyword-total").textContent = `${state.recycledKeywords.total || 0} 个`;
+    $("#recycle-keyword-list").innerHTML = items.map((item) => `<article class="keyword-item recycled ${state.selectedRecycledKeywords.has(item.id) ? "selected" : ""}" data-keyword-id="${item.id}"><label class="keyword-check"><input type="checkbox" ${state.selectedRecycledKeywords.has(item.id) ? "checked" : ""} aria-label="选择${escapeHtml(item.keyword)}"><span></span></label><div><strong title="${escapeHtml(item.keyword)}">${escapeHtml(item.keyword)}</strong><small><span>已使用 ${item.used_count || 0} 次</span><span>回收于 ${item.recycled_at ? formatDateTime(item.recycled_at) : "—"}</span><span>${item.source === "baidu" ? "百度" : item.source === "google" ? "谷歌" : "其他"}</span></small></div></article>`).join("");
+    $("#recycle-keyword-list").hidden = items.length === 0;
+    $("#recycle-keyword-empty").hidden = items.length !== 0;
+    $$(".keyword-check input", $("#recycle-keyword-list")).forEach((input) => input.addEventListener("change", (event) => {
+      const id = event.currentTarget.closest(".keyword-item").dataset.keywordId;
+      if (event.currentTarget.checked) state.selectedRecycledKeywords.add(id);
+      else state.selectedRecycledKeywords.delete(id);
+      event.currentTarget.closest(".keyword-item").classList.toggle("selected", event.currentTarget.checked);
+      updateRecycleKeywordSelection();
+    }));
+    const pages = Math.max(1, Math.ceil((state.recycledKeywords.total || 0) / state.keywordPageSize));
+    $("#recycle-keyword-pagination").hidden = !state.recycledKeywords.total;
+    $("#recycle-keyword-page-info").textContent = `第 ${state.recycleKeywordPage} / ${pages} 页 · 每页 100 个 · 共 ${state.recycledKeywords.total || 0} 个`;
+    $("#recycle-keyword-prev").disabled = state.recycleKeywordPage <= 1;
+    $("#recycle-keyword-next").disabled = state.recycleKeywordPage >= pages;
+    updateRecycleKeywordSelection();
+  }
+
+  async function loadRecycledKeywords(silent = false) {
+    if (!state.keywordAccountId) {
+      state.recycledKeywords = { items: [], total: 0 };
+      state.selectedRecycledKeywords.clear();
+      renderRecycledKeywords();
+      return;
+    }
+    try {
+      const offset = (state.recycleKeywordPage - 1) * state.keywordPageSize;
+      const params = new URLSearchParams({ recycled: "true", limit: String(state.keywordPageSize), offset: String(offset) });
+      if ($("#recycle-keyword-search").value.trim()) params.set("q", $("#recycle-keyword-search").value.trim());
+      const data = await api(`/accounts/${state.keywordAccountId}/keywords?${params}`);
+      const pages = Math.max(1, Math.ceil(data.total / state.keywordPageSize));
+      if (state.recycleKeywordPage > pages) { state.recycleKeywordPage = pages; return loadRecycledKeywords(silent); }
+      state.recycledKeywords = data;
+      const visible = new Set(data.items.map((item) => item.id));
+      state.selectedRecycledKeywords = new Set([...state.selectedRecycledKeywords].filter((id) => visible.has(id)));
+      renderRecycledKeywords();
+      renderRecycleSettings();
+      if (!silent) toast("回收关键词库已刷新");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function restoreSelectedKeywords() {
+    const ids = [...state.selectedRecycledKeywords];
+    if (!ids.length) return;
+    try {
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/bulk-restore`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
+      state.selectedRecycledKeywords.clear();
+      await Promise.all([loadRecycledKeywords(true), loadKeywordData(true)]);
+      toast(`已恢复 ${result.affected_count} 个关键词，可再次用于生成文章`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteRecycledKeywords() {
+    const ids = [...state.selectedRecycledKeywords];
+    if (!ids.length || !window.confirm(`确定永久删除回收库中的 ${ids.length} 个关键词吗？`)) return;
+    try {
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/bulk-delete`, { method: "POST", body: JSON.stringify({ keyword_ids: ids }) });
+      state.selectedRecycledKeywords.clear();
+      await loadRecycledKeywords(true);
+      toast(`已永久删除 ${result.affected_count} 个关键词`);
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function saveKeywordRecycleSettings() {
+    if (!state.keywordAccountId) return;
+    try {
+      await api(`/accounts/${state.keywordAccountId}`, { method: "PATCH", body: JSON.stringify({ recycle_keywords_after_use: $("#keyword-auto-recycle").checked, auto_restore_keywords: $("#keyword-auto-restore").checked, keyword_restore_threshold: Number($("#keyword-restore-threshold").value) }) });
+      await loadAccounts(true);
+      toast("关键词循环规则已保存");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function autoRestoreKeywordsNow() {
+    if (!state.keywordAccountId) return;
+    try {
+      const result = await api(`/accounts/${state.keywordAccountId}/keywords/auto-restore`, { method: "POST" });
+      await Promise.all([loadRecycledKeywords(true), loadKeywordData(true)]);
+      toast(result.affected_count ? `已按规则恢复 ${result.affected_count} 个关键词` : "正常关键词数量已达到设定值");
     } catch (error) { toast(error.message, "error"); }
   }
 
@@ -1213,7 +1349,7 @@
   }
 
   function selectedArticleStatus() {
-    return $(".article-status-tab.active")?.dataset.status || "draft";
+    return $("[data-status].active")?.dataset.status || "draft";
   }
 
   function articleActionButtons(item) {
@@ -1303,7 +1439,7 @@
     try {
       const result = await api(`/accounts/${accountId}/articles/sync`, { method: "POST" });
       if (result.matched_count > 0) {
-        $$(".article-status-tab").forEach((item) => item.classList.toggle("active", item.dataset.status === "published"));
+        $$('[data-status]').forEach((item) => item.classList.toggle("active", item.dataset.status === "published"));
         state.articlePage = 1;
         state.selectedArticles.clear();
       }
@@ -1398,18 +1534,40 @@
     } catch (error) { toast(error.message, "error"); }
   }
 
-  function navigate(page) {
+  function setNavigationActive(page, articleStatus = "", answerStatus = "") {
+    $$(".nav-item").forEach((item) => {
+      let active = item.dataset.page === page;
+      if (active && page === "articles") active = item.dataset.articleStatus === (articleStatus || selectedArticleStatus());
+      if (active && page === "answers") active = item.dataset.answerStatus === (answerStatus || "draft");
+      item.classList.toggle("active", active);
+      if (active) item.closest("details")?.setAttribute("open", "");
+    });
+  }
+
+  function navigate(page, options = {}) {
     if (["users", "settings"].includes(page) && state.user?.role !== "admin") page = "overview";
     state.page = page;
-    $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
+    const articleStatus = options.articleStatus || (page === "articles" ? selectedArticleStatus() : "");
+    const answerStatus = options.answerStatus || "";
+    if (page === "articles" && articleStatus) {
+      $$('[data-status]').forEach((item) => item.classList.toggle("active", item.dataset.status === articleStatus));
+    }
+    if (page === "answers" && answerStatus) {
+      const answerTab = $(`[data-answer-status="${answerStatus}"]`);
+      if (answerTab && !answerTab.classList.contains("active")) answerTab.click();
+    }
+    setNavigationActive(page, articleStatus, answerStatus);
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
-    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", keywords: "关键词采集", "article-generate": "文章生成", articles: "文章列表", "article-publish": "自动发布", questions: "问题采集", answers: "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
-    const kickers = { overview: "工作台", accounts: "账号与素材", products: "账号与素材", keywords: "关键词中心", "article-generate": "文章运营", articles: "文章运营", "article-publish": "文章运营", questions: "回答运营", answers: "回答运营", "auto-answer": "回答运营", schedules: "任务与系统", logs: "任务与系统", ai: "任务与系统", users: "任务与系统", settings: "任务与系统" };
+    const articleTitles = { draft: "草稿文章", ready: "待发布文章", published: "已发布文章", failed: "发布失败文章" };
+    const answerTitles = { draft: "草稿回答", ready: "待发布回答", published: "已发布回答", failed: "发布失败回答" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号", products: "账号", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
     if (page === "ai") loadProviders(true);
-    if (page === "keywords") loadKeywordData(true);
+    if (["keyword-collect", "keywords"].includes(page)) loadKeywordData(true);
+    if (page === "keyword-recycle") loadRecycledKeywords(true);
     if (page === "products") loadProducts(true);
     if (page === "users") loadUsers(true);
     if (page === "article-generate") { loadArticleGenerator(false); loadLatestArticleJob("generate"); }
@@ -1419,7 +1577,8 @@
 
   function refreshCurrentPage() {
     if (state.page === "products") return loadProducts();
-    if (state.page === "keywords") return loadKeywordData();
+    if (["keyword-collect", "keywords"].includes(state.page)) return loadKeywordData();
+    if (state.page === "keyword-recycle") return loadRecycledKeywords();
     if (state.page === "ai") return loadProviders();
     if (state.page === "users") return loadUsers();
     if (state.page === "article-generate") return loadArticleGenerator(false);
@@ -1473,9 +1632,10 @@
     $("#product-dialog-cancel").addEventListener("click", closeProductDialog);
     $("#product-dialog").addEventListener("click", (event) => { if (event.target.id === "product-dialog") closeProductDialog(); });
     $("#keyword-form").addEventListener("submit", startKeywordJob);
-    $("#keyword-account").addEventListener("change", () => { $("#folder-filter").value = "all"; state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); });
+    ["#keyword-account", "#keyword-library-account", "#keyword-recycle-account"].forEach((selector) => $(selector).addEventListener("change", (event) => selectKeywordAccount(event.currentTarget.value)));
     $("#keyword-refresh").addEventListener("click", () => loadKeywordData());
     $("#folder-filter").addEventListener("change", () => { state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); });
+    $("#keyword-search").addEventListener("input", () => { window.clearTimeout(state.keywordSearchTimer); state.keywordSearchTimer = window.setTimeout(() => { state.keywordPage = 1; state.selectedKeywords.clear(); loadKeywordData(true); }, 300); });
     $("#folder-create").addEventListener("click", createKeywordFolder);
     $("#folder-quick-create").addEventListener("click", createKeywordFolder);
     $("#folder-rename").addEventListener("click", renameKeywordFolder);
@@ -1485,9 +1645,18 @@
       renderKeywords();
     });
     $("#keyword-move").addEventListener("click", moveSelectedKeywords);
+    $("#keyword-recycle").addEventListener("click", recycleSelectedKeywords);
     $("#keyword-delete").addEventListener("click", deleteSelectedKeywords);
     $("#keyword-prev").addEventListener("click", () => { if (state.keywordPage > 1) { state.keywordPage -= 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
     $("#keyword-next").addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((state.keywords.total || 0) / state.keywordPageSize)); if (state.keywordPage < totalPages) { state.keywordPage += 1; state.selectedKeywords.clear(); loadKeywordData(true); } });
+    $("#recycle-keyword-select-all").addEventListener("change", (event) => { (state.recycledKeywords.items || []).forEach((item) => event.currentTarget.checked ? state.selectedRecycledKeywords.add(item.id) : state.selectedRecycledKeywords.delete(item.id)); renderRecycledKeywords(); });
+    $("#recycle-keyword-search").addEventListener("input", () => { window.clearTimeout(state.recycleKeywordSearchTimer); state.recycleKeywordSearchTimer = window.setTimeout(() => { state.recycleKeywordPage = 1; state.selectedRecycledKeywords.clear(); loadRecycledKeywords(true); }, 300); });
+    $("#recycle-keyword-restore").addEventListener("click", restoreSelectedKeywords);
+    $("#recycle-keyword-delete").addEventListener("click", deleteRecycledKeywords);
+    $("#keyword-recycle-settings-save").addEventListener("click", saveKeywordRecycleSettings);
+    $("#keyword-auto-restore-now").addEventListener("click", autoRestoreKeywordsNow);
+    $("#recycle-keyword-prev").addEventListener("click", () => { if (state.recycleKeywordPage > 1) { state.recycleKeywordPage -= 1; state.selectedRecycledKeywords.clear(); loadRecycledKeywords(true); } });
+    $("#recycle-keyword-next").addEventListener("click", () => { const pages = Math.max(1, Math.ceil((state.recycledKeywords.total || 0) / state.keywordPageSize)); if (state.recycleKeywordPage < pages) { state.recycleKeywordPage += 1; state.selectedRecycledKeywords.clear(); loadRecycledKeywords(true); } });
     $("#article-generate-account").addEventListener("change", () => { $("#article-generate-folder").value = "all"; $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
     $("#article-generate-folder").addEventListener("change", () => { $("#article-keyword-search").value = ""; loadArticleGenerator(true); });
     $("#prompt-folder-filter").addEventListener("change", renderPromptLibrary);
@@ -1515,8 +1684,10 @@
     $("#article-generation-stop").addEventListener("click", () => controlArticleJob("generate", "stop"));
     $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
     $("#article-sync").addEventListener("click", syncPublishedArticles);
-    $$(".article-status-tab").forEach((button) => button.addEventListener("click", () => {
-      $$(".article-status-tab").forEach((item) => item.classList.toggle("active", item === button));
+    $$('[data-status]').forEach((button) => button.addEventListener("click", () => {
+      $$('[data-status]').forEach((item) => item.classList.toggle("active", item === button));
+      setNavigationActive("articles", button.dataset.status, "");
+      $("#page-title").textContent = ({ draft: "草稿文章", ready: "待发布文章", published: "已发布文章", failed: "发布失败文章" })[button.dataset.status];
       state.articlePage = 1;
       state.selectedArticles.clear();
       loadArticles(true);
@@ -1544,8 +1715,9 @@
     $("#zhihu-login-dialog").addEventListener("click", (event) => { if (event.target.id === "zhihu-login-dialog") closeZhihuLoginDialog(); });
     $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
-    $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
+    $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page, { articleStatus: button.dataset.articleStatus, answerStatus: button.dataset.answerStatus })));
     $$('[data-page-link]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageLink)));
+    $$(".nav-section").forEach((section) => section.addEventListener("toggle", () => { if (!section.open) return; $$(".nav-section").forEach((other) => { if (other !== section) other.open = false; }); }));
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeAccountDialog(); closeProductDialog(); closeUserDialog(); closeArticleDialog(); closeZhihuLoginDialog(); } });
 
     try {

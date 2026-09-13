@@ -42,6 +42,10 @@ class KeywordRead(BaseModel):
     seed_keyword: str
     parent_keyword: str | None
     depth: int
+    is_recycled: bool
+    used_count: int
+    last_used_at: datetime | None
+    recycled_at: datetime | None
     folder_id: uuid.UUID | None = None
     created_at: datetime
 
@@ -74,6 +78,10 @@ class KeywordMoveRequest(BaseModel):
 
 
 class KeywordDeleteRequest(BaseModel):
+    keyword_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class KeywordRecycleRequest(BaseModel):
     keyword_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
 
 

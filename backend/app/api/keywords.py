@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, or_, select
@@ -24,9 +25,11 @@ from app.schemas.keyword import (
     KeywordListResponse,
     KeywordMoveRequest,
     KeywordRead,
+    KeywordRecycleRequest,
 )
-from app.services.keyword_collector import run_keyword_job
 from app.services.access_control import require_account_access
+from app.services.keyword_collector import run_keyword_job
+from app.services.keyword_recycle import restore_keywords_to_threshold
 
 router = APIRouter(
     prefix="/accounts/{account_id}",
@@ -70,8 +73,13 @@ async def list_keyword_folders(
 ) -> list[KeywordFolderRead]:
     await _require_account(account_id, db)
     result = await db.execute(
-        select(KeywordFolder, func.count(KeywordFolderItem.keyword_id))
+        select(KeywordFolder, func.count(AccountKeyword.id))
         .outerjoin(KeywordFolderItem, KeywordFolderItem.folder_id == KeywordFolder.id)
+        .outerjoin(
+            AccountKeyword,
+            (AccountKeyword.id == KeywordFolderItem.keyword_id)
+            & (AccountKeyword.is_recycled.is_(False)),
+        )
         .where(KeywordFolder.account_id == account_id)
         .group_by(KeywordFolder.id)
         .order_by(KeywordFolder.created_at.asc())
@@ -235,10 +243,14 @@ async def list_keywords(
     offset: int = Query(default=0, ge=0),
     folder_id: uuid.UUID | None = Query(default=None),
     unfiled: bool = Query(default=False),
+    recycled: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> KeywordListResponse:
     await _require_account(account_id, db)
-    filters = [AccountKeyword.account_id == account_id]
+    filters = [
+        AccountKeyword.account_id == account_id,
+        AccountKeyword.is_recycled.is_(recycled),
+    ]
     if q.strip():
         pattern = f"%{q.strip()}%"
         filters.append(
@@ -272,6 +284,61 @@ async def list_keywords(
         for keyword, item_folder_id in result.all()
     ]
     return KeywordListResponse(items=items, total=count or 0)
+
+
+async def _set_recycled_state(
+    account_id: uuid.UUID,
+    payload: KeywordRecycleRequest,
+    db: AsyncSession,
+    *,
+    recycled: bool,
+) -> KeywordBulkResult:
+    await _require_account(account_id, db)
+    keyword_ids = list(dict.fromkeys(payload.keyword_ids))
+    result = await db.execute(
+        select(AccountKeyword).where(
+            AccountKeyword.account_id == account_id,
+            AccountKeyword.id.in_(keyword_ids),
+        )
+    )
+    items = list(result.scalars())
+    if len(items) != len(keyword_ids):
+        raise HTTPException(status_code=404, detail="部分关键词不存在或不属于当前账号")
+    now = datetime.now(UTC)
+    for item in items:
+        item.is_recycled = recycled
+        item.recycled_at = now if recycled else None
+    await db.commit()
+    return KeywordBulkResult(affected_count=len(items))
+
+
+@router.post("/keywords/bulk-recycle", response_model=KeywordBulkResult)
+async def recycle_keywords(
+    account_id: uuid.UUID,
+    payload: KeywordRecycleRequest,
+    db: AsyncSession = Depends(get_db),
+) -> KeywordBulkResult:
+    return await _set_recycled_state(account_id, payload, db, recycled=True)
+
+
+@router.post("/keywords/bulk-restore", response_model=KeywordBulkResult)
+async def restore_keywords(
+    account_id: uuid.UUID,
+    payload: KeywordRecycleRequest,
+    db: AsyncSession = Depends(get_db),
+) -> KeywordBulkResult:
+    return await _set_recycled_state(account_id, payload, db, recycled=False)
+
+
+@router.post("/keywords/auto-restore", response_model=KeywordBulkResult)
+async def auto_restore_keywords(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> KeywordBulkResult:
+    account = await _require_account(account_id, db)
+    affected_count = await restore_keywords_to_threshold(account, db, force=True)
+    await db.commit()
+    return KeywordBulkResult(affected_count=affected_count)
 
 
 @router.patch("/keywords/folder", response_model=KeywordBulkResult)

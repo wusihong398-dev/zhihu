@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.12.1"
+        assert version.json()["version"] == "0.13.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -98,3 +98,22 @@ def test_prompt_toolbar_has_distinct_update_and_save_as_actions() -> None:
     assert "另存为新模板" in index
     assert "markPromptTemplateChanged" in script
     assert "已保存当前模板" in script
+
+
+def test_navigation_is_grouped_and_keyword_recycle_is_functional() -> None:
+    index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'data-nav-section="account"' in index
+    assert 'data-nav-section="keyword"' in index
+    assert 'data-nav-section="article"' in index
+    assert 'data-nav-section="qa"' in index
+    assert 'id="keyword-collect-page"' in index
+    assert 'id="keywords-page"' in index
+    assert 'id="keyword-recycle-page"' in index
+    assert 'data-article-status="published"' in index
+    assert 'data-answer-status="failed"' in index
+    assert "/keywords/bulk-recycle" in script
+    assert "/keywords/bulk-restore" in script
+    assert "/keywords/auto-restore" in script

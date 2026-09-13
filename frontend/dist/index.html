@@ -7,11 +7,11 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.12.1">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.12.1">
-  <link rel="stylesheet" href="/assets/login.css?v=0.12.1">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.12.1">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.12.1">
+  <link rel="stylesheet" href="/assets/app.css?v=0.13.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.13.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.13.0">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.13.0">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.13.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -55,27 +55,54 @@
         <span><strong>TOTOD</strong><small>知乎运营助手</small></span>
       </div>
       <nav class="nav" aria-label="主导航">
-        <span class="nav-group-title">工作台</span>
-        <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span>运行概览</button>
-        <span class="nav-group-title">账号与素材</span>
-        <button class="nav-item" data-page="accounts"><span class="nav-icon">◎</span>知乎账号</button>
-        <button class="nav-item" data-page="products"><span class="nav-icon">▣</span>推广商品</button>
-        <span class="nav-group-title">关键词中心</span>
-        <button class="nav-item" data-page="keywords"><span class="nav-icon">⌕</span>关键词采集</button>
-        <span class="nav-group-title">文章运营</span>
-        <button class="nav-item" data-page="article-generate"><span class="nav-icon">✦</span>文章生成</button>
-        <button class="nav-item" data-page="articles"><span class="nav-icon">▤</span>文章列表</button>
-        <button class="nav-item" data-page="article-publish"><span class="nav-icon">↑</span>自动发布</button>
-        <span class="nav-group-title">回答运营</span>
-        <button class="nav-item" data-page="questions"><span class="nav-icon">?</span>问题采集</button>
-        <button class="nav-item" data-page="answers"><span class="nav-icon">≡</span>回答列表</button>
-        <button class="nav-item" data-page="auto-answer"><span class="nav-icon">↗</span>自动回答</button>
-        <span class="nav-group-title">任务与系统</span>
-        <button class="nav-item" data-page="schedules"><span class="nav-icon">◷</span>定时计划</button>
-        <button class="nav-item" data-page="logs"><span class="nav-icon">☷</span>运行日志</button>
-        <button class="nav-item" data-page="ai"><span class="nav-icon">◇</span>AI 配置</button>
-        <button class="nav-item admin-only" data-page="users"><span class="nav-icon">♙</span>用户管理</button>
-        <button class="nav-item admin-only" data-page="settings"><span class="nav-icon">⚙</span>系统设置</button>
+        <button class="nav-item nav-home active" data-page="overview"><span class="nav-icon">◫</span>运行概览</button>
+        <details class="nav-section" data-nav-section="account" open>
+          <summary><span><i>◎</i>账号</span><small>›</small></summary>
+          <div class="nav-children">
+            <button class="nav-item" data-page="accounts">知乎账号</button>
+            <button class="nav-item" data-page="products">推广商品</button>
+            <button class="nav-item" data-page="ai">AI 配置</button>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="keyword">
+          <summary><span><i>⌕</i>关键词</span><small>›</small></summary>
+          <div class="nav-children">
+            <button class="nav-item" data-page="keyword-collect">关键词采集</button>
+            <button class="nav-item" data-page="keywords">关键词列表</button>
+            <button class="nav-item" data-page="keyword-recycle">回收关键词库</button>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="article">
+          <summary><span><i>▤</i>文章</span><small>›</small></summary>
+          <div class="nav-children">
+            <button class="nav-item" data-page="article-generate">生成文章</button>
+            <button class="nav-item" data-page="articles" data-article-status="draft">草稿文章</button>
+            <button class="nav-item" data-page="articles" data-article-status="ready">待发布文章</button>
+            <button class="nav-item" data-page="articles" data-article-status="published">已发布文章</button>
+            <button class="nav-item" data-page="articles" data-article-status="failed">发布失败文章</button>
+            <button class="nav-item" data-page="article-publish">发布任务</button>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="qa">
+          <summary><span><i>?</i>问答</span><small>›</small></summary>
+          <div class="nav-children">
+            <button class="nav-item" data-page="questions">问题采集与列表</button>
+            <button class="nav-item" data-page="answers" data-answer-status="draft">草稿回答</button>
+            <button class="nav-item" data-page="answers" data-answer-status="ready">待发布回答</button>
+            <button class="nav-item" data-page="answers" data-answer-status="published">已发布回答</button>
+            <button class="nav-item" data-page="answers" data-answer-status="failed">发布失败回答</button>
+            <button class="nav-item" data-page="auto-answer">自动回答</button>
+          </div>
+        </details>
+        <details class="nav-section nav-section-system" data-nav-section="system">
+          <summary><span><i>⚙</i>任务与系统</span><small>›</small></summary>
+          <div class="nav-children">
+            <button class="nav-item" data-page="schedules">定时计划</button>
+            <button class="nav-item" data-page="logs">运行日志</button>
+            <button class="nav-item admin-only" data-page="users">用户管理</button>
+            <button class="nav-item admin-only" data-page="settings">系统设置</button>
+          </div>
+        </details>
       </nav>
       <div class="sidebar-status">
         <span class="status-dot"></span>
@@ -134,7 +161,7 @@
         </section>
       </div>
 
-      <div id="keywords-page" class="page">
+      <div id="keyword-collect-page" class="page">
         <section class="page-heading"><div><span class="eyebrow">真实网页相关搜索</span><h1>关键词采集</h1><p>从百度“相关搜索”和谷歌“用户还搜索了”提取关联词，数量不足时按词长从短到长逐层扩展。</p></div></section>
         <section class="collector-layout">
           <form id="keyword-form" class="panel collector-form">
@@ -166,9 +193,14 @@
             </div>
           </section>
         </section>
+      </div>
+
+      <div id="keywords-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">可用内容素材</span><h1>关键词列表</h1><p>只显示尚未使用的正常关键词；每页 100 个，可按文件夹筛选、批量移动或转入回收库。</p></div><button class="button button-primary" data-page-link="keyword-collect">＋ 采集关键词</button></section>
         <section class="panel keyword-list-panel">
-          <div class="panel-head"><div><span class="eyebrow">账号关键词库</span><h3>已采集关键词</h3></div><strong id="keyword-total" class="panel-count">0 个</strong></div>
+          <div class="panel-head"><div><span class="eyebrow">账号关键词库</span><h3>正常关键词</h3></div><div class="panel-head-actions"><select id="keyword-library-account" aria-label="选择知乎账号"><option value="">请选择知乎账号</option></select><strong id="keyword-total" class="panel-count">0 个</strong></div></div>
           <div class="folder-toolbar">
+            <label class="search-box keyword-search-box">⌕<input id="keyword-search" placeholder="搜索关键词或主词"></label>
             <select id="folder-filter" aria-label="筛选关键词文件夹"><option value="all">全部关键词</option><option value="unfiled">未归档</option></select>
             <button id="folder-create" class="button button-ghost" type="button">新建文件夹</button>
             <button id="folder-rename" class="button button-ghost" type="button">重命名</button>
@@ -179,7 +211,8 @@
             <span id="keyword-selected-count">已选 0 个</span>
             <select id="keyword-move-folder" aria-label="移动到文件夹"><option value="">移动到未归档</option></select>
             <button id="keyword-move" class="button button-ghost" type="button">移动所选</button>
-            <button id="keyword-delete" class="button button-ghost danger-text" type="button">删除所选</button>
+            <button id="keyword-recycle" class="button button-primary" type="button">转入回收库</button>
+            <button id="keyword-delete" class="button button-ghost danger-text" type="button">永久删除</button>
           </div>
           <div id="keyword-list" class="keyword-list"></div>
           <div id="keyword-empty" class="empty-state"><span>⌕</span><h3>还没有关键词</h3><p>选择账号并执行一次关键词采集任务。</p></div>
@@ -188,6 +221,33 @@
             <span id="keyword-page-info">第 1 / 1 页</span>
             <button id="keyword-next" class="button button-ghost" type="button">下一页</button>
           </div>
+        </section>
+      </div>
+
+      <div id="keyword-recycle-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">关键词循环使用</span><h1>回收关键词库</h1><p>已用于生成文章的关键词自动归档到这里，不再出现在正常列表；可以批量恢复后再次使用。</p></div><button class="button button-primary" data-page-link="keywords">返回正常关键词库</button></section>
+        <section class="panel recycle-settings-panel">
+          <div class="panel-head"><div><span class="eyebrow">账号循环规则</span><h3>自动回收与恢复</h3></div><select id="keyword-recycle-account" aria-label="选择知乎账号"><option value="">请选择知乎账号</option></select></div>
+          <div class="recycle-settings-body">
+            <label class="toggle-card"><input id="keyword-auto-recycle" type="checkbox"><span><strong>生成成功后自动回收</strong><small>关键词生成出合格文章后，从正常库转入回收库。</small></span></label>
+            <label class="toggle-card"><input id="keyword-auto-restore" type="checkbox"><span><strong>定时生成时自动恢复</strong><small>正常库数量不足时，按最早回收顺序自动补充。</small></span></label>
+            <label class="threshold-field"><span>正常库至少保留</span><input id="keyword-restore-threshold" type="number" min="1" max="500" value="20"><small>个关键词</small></label>
+            <button id="keyword-recycle-settings-save" class="button button-primary" type="button">保存循环规则</button>
+            <button id="keyword-auto-restore-now" class="button button-ghost" type="button">立即按规则恢复</button>
+          </div>
+        </section>
+        <section class="panel keyword-list-panel recycle-list-panel">
+          <div class="panel-head"><div><span class="eyebrow">已使用关键词</span><h3>回收库列表</h3></div><strong id="recycle-keyword-total" class="panel-count">0 个</strong></div>
+          <div class="folder-toolbar"><label class="search-box keyword-search-box">⌕<input id="recycle-keyword-search" placeholder="搜索回收关键词"></label><span class="muted">按回收时间从新到旧显示</span></div>
+          <div class="selection-toolbar">
+            <label class="select-all"><input id="recycle-keyword-select-all" type="checkbox"> 全选当前页</label>
+            <span id="recycle-keyword-selected-count">已选 0 个</span>
+            <button id="recycle-keyword-restore" class="button button-primary" type="button">恢复所选</button>
+            <button id="recycle-keyword-delete" class="button button-ghost danger-text" type="button">永久删除</button>
+          </div>
+          <div id="recycle-keyword-list" class="keyword-list"></div>
+          <div id="recycle-keyword-empty" class="empty-state"><span>↻</span><h3>回收库为空</h3><p>关键词被用于成功生成文章后，会按当前账号的规则进入这里。</p></div>
+          <div id="recycle-keyword-pagination" class="pagination" hidden><button id="recycle-keyword-prev" class="button button-ghost" type="button">上一页</button><span id="recycle-keyword-page-info">第 1 / 1 页</span><button id="recycle-keyword-next" class="button button-ghost" type="button">下一页</button></div>
         </section>
       </div>
 
@@ -424,8 +484,8 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.12.1" defer></script>
-  <script src="/assets/qa.js?v=0.12.1" defer></script>
-  <script src="/assets/operations.js?v=0.12.1" defer></script>
+  <script src="/assets/app.js?v=0.13.0" defer></script>
+  <script src="/assets/qa.js?v=0.13.0" defer></script>
+  <script src="/assets/operations.js?v=0.13.0" defer></script>
 </body>
 </html>

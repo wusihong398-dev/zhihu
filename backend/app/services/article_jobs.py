@@ -26,6 +26,7 @@ from app.services.ai_providers import (
     generate_article_content,
 )
 from app.services.secret_box import decrypt_secret
+from app.services.keyword_recycle import mark_keyword_used
 from app.services.zhihu_publisher import (
     ZhihuLoginRequired,
     ZhihuPublishError,
@@ -183,7 +184,11 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
         config = config_result.scalar_one_or_none()
         keyword_ids = [uuid.UUID(value) for value in payload["keyword_ids"]]
         keyword_result = await db.execute(
-            select(AccountKeyword).where(AccountKeyword.id.in_(keyword_ids))
+            select(AccountKeyword).where(
+                AccountKeyword.account_id == account.id,
+                AccountKeyword.id.in_(keyword_ids),
+                AccountKeyword.is_recycled.is_(False),
+            )
         )
         keywords = {item.id: item for item in keyword_result.scalars()}
         if account is None or product is None or config is None:
@@ -259,6 +264,11 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
             if item.strip()
         ]
         found_term = next((term for term in forbidden_terms if term in content), None)
+        generation_valid = not generation_error and not (
+            article.content_length < payload["min_length"]
+            or article.content_length > payload["max_length"]
+            or found_term
+        )
         if generation_error:
             article.status = ArticleStatus.failed
             article.error_message = generation_error
@@ -306,6 +316,13 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
         async with SessionLocal() as db:
             db.add(article)
             db.add(account)
+            if generation_valid:
+                stored_keyword = await db.get(AccountKeyword, keyword.id)
+                if stored_keyword:
+                    mark_keyword_used(
+                        stored_keyword,
+                        recycle=account.recycle_keywords_after_use,
+                    )
             current_job = await db.get(ArticleJob, job_id)
             current_job.completed_count += 1
             if article.status == ArticleStatus.failed:

@@ -52,6 +52,9 @@ class ZhihuAccount(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     daily_article_limit: Mapped[int] = mapped_column(Integer, default=0)
     daily_answer_limit: Mapped[int] = mapped_column(Integer, default=0)
+    recycle_keywords_after_use: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_restore_keywords: Mapped[bool] = mapped_column(Boolean, default=False)
+    keyword_restore_threshold: Mapped[int] = mapped_column(Integer, default=20)
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

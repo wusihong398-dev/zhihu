@@ -15,6 +15,7 @@ from app.services.keyword_collector import (
     parse_google_related,
     parse_google_suggestions,
 )
+from app.services.keyword_recycle import mark_keyword_used
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 from app.services.zhihu_article_sync import _published_article_from_payload
 from app.services.zhihu_answer_publisher import _answer_id_from_payload
@@ -34,6 +35,7 @@ from app.services.zhihu_publisher import (
 from app.services.zhihu_question_collector import questions_from_search_payload
 from app.api.articles import _job_read
 from app.models.article_job import ArticleJobStatus, ArticleJobType
+from app.models.keyword import AccountKeyword, KeywordSource
 
 
 def test_secret_round_trip() -> None:
@@ -65,6 +67,24 @@ def test_keyword_normalization_and_baidu_parser() -> None:
     """
     assert normalize_keyword("  智能   家居 ") == "智能 家居"
     assert parse_baidu_related(html) == ["智能 家居", "智能门锁推荐"]
+
+
+def test_used_keyword_can_be_recycled_for_later_restore() -> None:
+    keyword = AccountKeyword(
+        account_id=uuid.uuid4(),
+        keyword="头发护理",
+        normalized_keyword="头发护理",
+        source=KeywordSource.baidu,
+        seed_keyword="脱发",
+        depth=1,
+        used_count=0,
+        is_recycled=False,
+    )
+    mark_keyword_used(keyword, recycle=True)
+    assert keyword.used_count == 1
+    assert keyword.is_recycled is True
+    assert keyword.last_used_at is not None
+    assert keyword.recycled_at is not None
 
 
 def test_google_related_parser() -> None:

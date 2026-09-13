@@ -58,6 +58,58 @@ async def create_schema() -> None:
                         "ON zhihu_accounts (owner_user_id)"
                     )
                 )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE zhihu_accounts ADD COLUMN IF NOT EXISTS "
+                        "recycle_keywords_after_use BOOLEAN NOT NULL DEFAULT TRUE"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE zhihu_accounts ADD COLUMN IF NOT EXISTS "
+                        "auto_restore_keywords BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE zhihu_accounts ADD COLUMN IF NOT EXISTS "
+                        "keyword_restore_threshold INTEGER NOT NULL DEFAULT 20"
+                    )
+                )
+            keywords_exist = await connection.scalar(
+                text("SELECT to_regclass('public.account_keywords') IS NOT NULL")
+            )
+            if keywords_exist:
+                await connection.execute(
+                    text(
+                        "ALTER TABLE account_keywords ADD COLUMN IF NOT EXISTS "
+                        "is_recycled BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE account_keywords ADD COLUMN IF NOT EXISTS "
+                        "used_count INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE account_keywords ADD COLUMN IF NOT EXISTS "
+                        "last_used_at TIMESTAMPTZ NULL"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE account_keywords ADD COLUMN IF NOT EXISTS "
+                        "recycled_at TIMESTAMPTZ NULL"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_account_keywords_is_recycled "
+                        "ON account_keywords (is_recycled)"
+                    )
+                )
             articles_exist = await connection.scalar(
                 text("SELECT to_regclass('public.articles') IS NOT NULL")
             )

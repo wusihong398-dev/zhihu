@@ -12,6 +12,7 @@ from app.models.account import ZhihuAccount
 from app.models.article import Article, ArticleStatus
 from app.models.keyword import AccountKeyword
 from app.models.keyword_folder import KeywordFolderItem
+from app.services.keyword_recycle import restore_keywords_to_threshold
 from app.models.question import QuestionStatus, ZhihuQuestion
 from app.models.schedule import OperationSchedule, ScheduleRunStatus, ScheduleTaskType
 from app.models.user import User
@@ -69,14 +70,19 @@ def _account_day_start(account: ZhihuAccount) -> datetime:
     return datetime.combine(local.date(), time.min, tzinfo=timezone).astimezone(UTC)
 
 
-async def _keyword_ids(account_id: uuid.UUID, config: dict, db) -> list[uuid.UUID]:
+async def _keyword_ids(account: ZhihuAccount, config: dict, db) -> list[uuid.UUID]:
     limit = min(50, max(1, int(config.get("batch_size", 10))))
-    query = select(AccountKeyword.id).where(AccountKeyword.account_id == account_id)
-    folder_id = config.get("folder_id")
+    folder_id = uuid.UUID(config["folder_id"]) if config.get("folder_id") else None
+    await restore_keywords_to_threshold(account, db, folder_id=folder_id)
+    await db.commit()
+    query = select(AccountKeyword.id).where(
+        AccountKeyword.account_id == account.id,
+        AccountKeyword.is_recycled.is_(False),
+    )
     if folder_id:
         query = query.join(
             KeywordFolderItem, KeywordFolderItem.keyword_id == AccountKeyword.id
-        ).where(KeywordFolderItem.folder_id == uuid.UUID(folder_id))
+        ).where(KeywordFolderItem.folder_id == folder_id)
     return list((await db.execute(query.order_by(AccountKeyword.created_at.asc()).limit(limit))).scalars())
 
 
@@ -131,7 +137,7 @@ async def _dispatch(schedule_id: uuid.UUID) -> tuple[str, str | None]:
         if schedule.task_type == ScheduleTaskType.article_generate:
             from app.api.articles import create_generation_job
 
-            keyword_ids = await _keyword_ids(account.id, config, db)
+            keyword_ids = await _keyword_ids(account, config, db)
             if not keyword_ids:
                 raise RuntimeError("指定关键词库没有可用关键词")
             result = await create_generation_job(
