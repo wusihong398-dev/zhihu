@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.12.0"
+        assert version.json()["version"] == "0.12.1"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -86,3 +86,15 @@ def test_operations_pages_are_functional_modules() -> None:
     assert "/schedules" in script
     assert "/operation-logs" in script
     assert "/system-settings" in script
+
+
+def test_prompt_toolbar_has_distinct_update_and_save_as_actions() -> None:
+    index = (PROJECT_ROOT / "frontend/dist/index.html").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "frontend/dist/assets/app.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="prompt-template-update"' in index
+    assert "保存当前模板" in index
+    assert "另存为新模板" in index
+    assert "markPromptTemplateChanged" in script
+    assert "已保存当前模板" in script

@@ -922,6 +922,7 @@
     $("#prompt-folder-rename").disabled = !hasFolder;
     $("#prompt-folder-delete").disabled = !hasFolder;
     $("#prompt-template-update").disabled = !hasTemplate;
+    if (!hasTemplate) $("#prompt-template-update").textContent = "保存当前模板";
     $("#prompt-template-rename").disabled = !hasTemplate;
     $("#prompt-template-delete").disabled = !hasTemplate;
   }
@@ -937,6 +938,7 @@
 
   function selectPromptTemplate() {
     const template = state.promptTemplates.find((item) => item.id === $("#prompt-template-select").value);
+    $("#prompt-template-update").textContent = "保存当前模板";
     if (template) {
       $("#article-title-prompt").value = template.title_prompt;
       $("#article-content-prompt").value = template.content_prompt;
@@ -997,6 +999,7 @@
       renderPromptLibrary();
       $("#prompt-template-select").value = template.id;
       renderPromptLibrary();
+      $("#prompt-template-update").textContent = "保存当前模板";
       toast("提示词模板已保存");
     } catch (error) { toast(error.message, "error"); }
   }
@@ -1004,16 +1007,36 @@
   async function updatePromptTemplate() {
     const id = $("#prompt-template-select").value;
     if (!id) return;
+    const template = state.promptTemplates.find((item) => item.id === id);
+    const titlePrompt = $("#article-title-prompt").value.trim();
+    const contentPrompt = $("#article-content-prompt").value.trim();
+    if (!titlePrompt || !contentPrompt) {
+      toast("标题提示词和正文提示词不能为空", "error");
+      return;
+    }
+    const button = $("#prompt-template-update");
+    button.disabled = true;
+    button.textContent = "保存中…";
     try {
       await api(`/article-prompt-templates/${id}`, { method: "PATCH", body: JSON.stringify({
-        folder_id: $("#prompt-folder-filter").value || null,
-        title_prompt: $("#article-title-prompt").value.trim(), content_prompt: $("#article-content-prompt").value.trim()
+        title_prompt: titlePrompt, content_prompt: contentPrompt
       }) });
       await loadPromptLibrary();
       $("#prompt-template-select").value = id;
       renderPromptLibrary();
-      toast("模板修改已保存");
-    } catch (error) { toast(error.message, "error"); }
+      button.textContent = "保存当前模板";
+      toast(`已保存当前模板：${template?.name || "当前模板"}`);
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      button.textContent = "保存当前模板";
+      button.disabled = !$("#prompt-template-select").value;
+    }
+  }
+
+  function markPromptTemplateChanged() {
+    if (!$("#prompt-template-select").value) return;
+    $("#prompt-template-update").textContent = "保存当前模板（有修改）";
   }
 
   async function renamePromptTemplate() {
@@ -1474,6 +1497,8 @@
     $("#prompt-folder-delete").addEventListener("click", deletePromptFolder);
     $("#prompt-template-save").addEventListener("click", savePromptTemplate);
     $("#prompt-template-update").addEventListener("click", updatePromptTemplate);
+    $("#article-title-prompt").addEventListener("input", markPromptTemplateChanged);
+    $("#article-content-prompt").addEventListener("input", markPromptTemplateChanged);
     $("#prompt-template-rename").addEventListener("click", renamePromptTemplate);
     $("#prompt-template-delete").addEventListener("click", deletePromptTemplate);
     $("#article-keyword-search").addEventListener("input", renderArticleKeywordOptions);
