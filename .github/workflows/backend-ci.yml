@@ -43,6 +43,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://totod:test-password@127.0.0.1:5432/totod
       REDIS_URL: redis://127.0.0.1:6379/0
       ACCOUNT_DATA_ROOT: /tmp/totod-accounts
+      MEDIA_DATA_ROOT: /tmp/totod-uploads
 
     steps:
       - uses: actions/checkout@v4
