@@ -56,6 +56,7 @@ async def sync_account_configuration(
     """
     target.daily_article_limit = source.daily_article_limit
     target.daily_answer_limit = source.daily_answer_limit
+    target.answer_publish_mode = source.answer_publish_mode
     target.recycle_keywords_after_use = source.recycle_keywords_after_use
     target.auto_restore_keywords = source.auto_restore_keywords
     target.keyword_restore_threshold = source.keyword_restore_threshold

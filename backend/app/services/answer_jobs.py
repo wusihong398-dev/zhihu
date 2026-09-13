@@ -11,6 +11,7 @@ from app.db.session import SessionLocal
 from app.models.account import AccountStatus, ZhihuAccount
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
+from app.models.local_publisher import LocalAnswerPublishTask
 from app.models.product import PromotedProduct
 from app.models.question import QuestionStatus, ZhihuQuestion
 from app.models.system_setting import SystemSetting
@@ -64,8 +65,21 @@ async def recover_answer_jobs() -> None:
         )
         jobs = list(result.scalars())
         for job in jobs:
-            job.status = AnswerJobStatus.paused
-            job.error_message = "服务重启后任务已暂停，可点击继续执行"
+            local_task_count = await db.scalar(
+                select(LocalAnswerPublishTask.id)
+                .where(
+                    LocalAnswerPublishTask.job_id == job.id,
+                    LocalAnswerPublishTask.status.in_(["queued", "leased"]),
+                )
+                .limit(1)
+            )
+            if local_task_count:
+                job.status = AnswerJobStatus.pending
+                job.current_item = "等待 Windows 本地发布客户端领取任务"
+                job.error_message = None
+            else:
+                job.status = AnswerJobStatus.paused
+                job.error_message = "服务重启后任务已暂停，可点击继续执行"
         if jobs:
             await db.commit()
 

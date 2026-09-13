@@ -1,0 +1,28 @@
+name: Build Windows Publisher
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "client/windows_publisher/**"
+      - ".github/workflows/windows-publisher.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r client/windows_publisher/requirements.txt
+      - name: Build executable
+        working-directory: client/windows_publisher
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name TOTOD-Windows-Publisher --collect-all playwright totod_publisher.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TOTOD-Windows-Publisher
+          path: client/windows_publisher/dist/TOTOD-Windows-Publisher.exe
+          if-no-files-found: error

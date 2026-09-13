@@ -127,7 +127,7 @@
       <label class="inline-field"><input class="answer-input" aria-label="${escapeHtml(account.display_name)}每日回答数量" type="number" min="0" max="200" value="${account.daily_answer_limit}"><span>个/天</span></label>
       <span class="badge login-status ${statusClass}">${statusLabel}</span>
       <label class="switch" title="启用或停用账号"><input class="enabled-input" type="checkbox" ${account.enabled ? "checked" : ""} aria-label="启用${escapeHtml(account.display_name)}"><i></i></label>
-      <div class="row-actions"><button class="button ${account.status === "online" ? "button-ghost" : "button-primary"} login-account" type="button">${account.status === "online" ? "重新登录" : "扫码登录"}</button><button class="button ${account.status === "online" ? "button-primary" : "button-ghost"} open-website-account" type="button">登录官网</button><button class="button button-ghost save-account" type="button">保存设置</button><button class="button button-ghost edit-account" type="button">编辑</button><button class="button button-ghost danger-text delete-account" type="button">删除</button></div>
+      <div class="row-actions"><button class="button ${account.status === "online" ? "button-ghost" : "button-primary"} login-account" type="button">${account.status === "online" ? "重新登录" : "扫码登录"}</button><button class="button ${account.status === "online" ? "button-primary" : "button-ghost"} open-website-account" type="button">服务器登录官网</button><button class="button button-ghost save-account" type="button">保存设置</button><button class="button button-ghost edit-account" type="button">编辑</button><button class="button button-ghost danger-text delete-account" type="button">删除</button></div>
     </div>`;
   }
 
@@ -365,6 +365,7 @@
     $("#article-limit").value = editing?.daily_article_limit ?? 3;
     $("#answer-limit").value = editing?.daily_answer_limit ?? 5;
     $("#account-timezone").value = editing?.timezone || "Asia/Shanghai";
+    $("#answer-publish-mode").value = editing?.answer_publish_mode || "local";
     const targetOwnerId = editing?.owner_user_id ?? (state.user?.role === "admin" ? null : state.user?.id);
     const syncCandidates = state.accounts.filter((item) => item.id !== editing?.id && item.owner_user_id === targetOwnerId);
     $("#account-sync-source").innerHTML = `<option value="">请选择来源账号</option>${syncCandidates.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}</option>`).join("")}`;
@@ -413,7 +414,8 @@
       remark: $("#remark").value.trim(),
       daily_article_limit: Number($("#article-limit").value),
       daily_answer_limit: Number($("#answer-limit").value),
-      timezone: $("#account-timezone").value.trim() || "Asia/Shanghai"
+      timezone: $("#account-timezone").value.trim() || "Asia/Shanghai",
+      answer_publish_mode: $("#answer-publish-mode").value
     };
     const syncConfig = $("#account-sync-config").checked;
     const syncSource = $("#account-sync-source").value;
@@ -1900,8 +1902,8 @@
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
     const articleTitles = { draft: "草稿文章", ready: "待发布文章", published: "已发布文章", failed: "发布失败文章" };
     const answerTitles = { draft: "草稿回答", ready: "待发布回答", published: "已发布回答", failed: "发布失败回答" };
-    const titles = { overview: "运行概览", accounts: "知乎账号", products: "商品管理", "prompt-templates": "提示词模板", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "local-media": "本地图片库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
-    const kickers = { overview: "工作台", accounts: "账号", products: "内容资产", "prompt-templates": "内容资产", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "local-media": "文章", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "商品管理", "prompt-templates": "提示词模板", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "local-media": "本地图片库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", "local-publisher": "本地发布客户端", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号", products: "内容资产", "prompt-templates": "内容资产", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "local-media": "文章", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", "local-publisher": "任务与系统", users: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");

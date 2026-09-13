@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.16.6"
+        assert version.json()["version"] == "0.17.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -49,6 +49,9 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert 'class="button button-ghost edit-account"' in script
     assert 'class="button button-ghost danger-text delete-account"' in script
     assert "登录官网" in script
+    assert 'id="answer-publish-mode"' in index
+    assert 'data-page="local-publisher"' in index
+    assert 'id="local-device-create"' in index
     assert "openZhihuWebsite" in script
     assert 'id="account-sync-config"' in index
     assert "sync_config_from_account_id" in script

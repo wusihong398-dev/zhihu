@@ -23,6 +23,7 @@
 .operation-message { white-space: normal; overflow-wrap: anywhere; color: #91a8c8; }
 .settings-panel { max-width: 1120px; }
 .settings-panel .security-note { margin: 22px 0; }
+.local-device-header,.local-device-row{grid-template-columns:2fr 1.5fr 1fr auto}.local-device-row p{margin:4px 0 0;color:#7f97b9;font-size:.72rem}.local-device-token{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.local-device-row .operation-actions{justify-content:flex-end}
 @media (max-width: 1250px) {
   .operation-form .field-grid, .schedule-dynamic .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .operation-schedule-header, .operation-log-header { display: none; }

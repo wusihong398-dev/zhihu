@@ -11,6 +11,7 @@ from app.api import (
     health_router,
     keywords_router,
     local_media_router,
+    local_publisher_router,
     operations_router,
     products_router,
     qa_router,
@@ -45,7 +46,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.16.6",
+    version="0.17.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
@@ -58,6 +59,7 @@ app.include_router(articles_router, prefix="/api")
 app.include_router(article_prompts_router, prefix="/api")
 app.include_router(keywords_router, prefix="/api")
 app.include_router(local_media_router, prefix="/api")
+app.include_router(local_publisher_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
 app.include_router(qa_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")

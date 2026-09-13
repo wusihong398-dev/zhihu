@@ -76,6 +76,12 @@ async def create_schema() -> None:
                         "keyword_restore_threshold INTEGER NOT NULL DEFAULT 20"
                     )
                 )
+                await connection.execute(
+                    text(
+                        "ALTER TABLE zhihu_accounts ADD COLUMN IF NOT EXISTS "
+                        "answer_publish_mode VARCHAR(16) NOT NULL DEFAULT 'server'"
+                    )
+                )
             keywords_exist = await connection.scalar(
                 text("SELECT to_regclass('public.account_keywords') IS NOT NULL")
             )

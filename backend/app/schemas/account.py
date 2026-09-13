@@ -12,6 +12,7 @@ class AccountCreate(BaseModel):
     remark: str = Field(default="", max_length=255)
     daily_article_limit: int = Field(default=0, ge=0, le=100)
     daily_answer_limit: int = Field(default=0, ge=0, le=200)
+    answer_publish_mode: Literal["server", "local"] = "server"
     recycle_keywords_after_use: bool = True
     auto_restore_keywords: bool = False
     keyword_restore_threshold: int = Field(default=20, ge=1, le=500)
@@ -24,6 +25,7 @@ class AccountUpdate(BaseModel):
     remark: str | None = Field(default=None, max_length=255)
     daily_article_limit: int | None = Field(default=None, ge=0, le=100)
     daily_answer_limit: int | None = Field(default=None, ge=0, le=200)
+    answer_publish_mode: Literal["server", "local"] | None = None
     recycle_keywords_after_use: bool | None = None
     auto_restore_keywords: bool | None = None
     keyword_restore_threshold: int | None = Field(default=None, ge=1, le=500)
@@ -43,6 +45,7 @@ class AccountRead(BaseModel):
     enabled: bool
     daily_article_limit: int
     daily_answer_limit: int
+    answer_publish_mode: Literal["server", "local"]
     recycle_keywords_after_use: bool
     auto_restore_keywords: bool
     keyword_restore_threshold: int

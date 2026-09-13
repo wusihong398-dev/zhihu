@@ -50,6 +50,7 @@ from app.services.access_control import get_account_for_user
 from app.services.account_storage import account_storage_path
 from app.services.ai_providers import PROVIDERS
 from app.services.answer_jobs import answer_content_length, start_answer_job
+from app.services.local_publisher import enqueue_local_answer_tasks, job_has_local_tasks
 from app.services.secret_box import decrypt_secret
 from app.services.zhihu_question_collector import (
     ZhihuQuestionCollectionError,
@@ -697,7 +698,10 @@ async def _control_job(
     elif action == "resume" and job.status in {AnswerJobStatus.paused, AnswerJobStatus.pending}:
         job.status = AnswerJobStatus.running
         job.error_message = None
-        start_answer_job(job.id)
+        if await job_has_local_tasks(job.id, db):
+            job.current_item = "等待 Windows 本地发布客户端领取任务"
+        else:
+            start_answer_job(job.id)
     elif action == "stop" and job.status not in {
         AnswerJobStatus.completed,
         AnswerJobStatus.failed,
@@ -705,6 +709,21 @@ async def _control_job(
     }:
         job.status = AnswerJobStatus.stopped
         job.completed_at = datetime.now(UTC)
+        from app.models.local_publisher import LocalAnswerPublishTask
+
+        local_tasks = list(
+            (
+                await db.execute(
+                    select(LocalAnswerPublishTask).where(
+                        LocalAnswerPublishTask.job_id == job.id,
+                        LocalAnswerPublishTask.status.in_(["queued", "leased"]),
+                    )
+                )
+            ).scalars()
+        )
+        for task in local_tasks:
+            task.status = "cancelled"
+            task.lease_expires_at = None
     else:
         raise HTTPException(status_code=409, detail="当前任务状态不能执行此操作")
     await db.commit()
@@ -771,9 +790,12 @@ async def create_answer_publish_job(
         payload_json=json.dumps({"answer_ids": [str(item.id) for item in answers]}),
     )
     db.add(job)
+    if account.answer_publish_mode == "local":
+        await enqueue_local_answer_tasks(job, [item.id for item in answers], db)
     await db.commit()
     await db.refresh(job)
-    start_answer_job(job.id)
+    if account.answer_publish_mode != "local":
+        start_answer_job(job.id)
     return _job_read(job)
 
 
@@ -854,9 +876,12 @@ async def run_auto_answer(
         payload_json=json.dumps({"answer_ids": [str(value) for value in answer_ids]}),
     )
     db.add(job)
+    if account.answer_publish_mode == "local":
+        await enqueue_local_answer_tasks(job, answer_ids, db)
     await db.commit()
     await db.refresh(job)
-    start_answer_job(job.id)
+    if account.answer_publish_mode != "local":
+        start_answer_job(job.id)
     return AutoAnswerRunResponse(
         daily_limit=account.daily_answer_limit,
         attempted_today=quota_used,
