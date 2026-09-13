@@ -4,6 +4,7 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,7 @@ from app.schemas.article_prompt import (
     PromptFolderUpdate,
 )
 from app.services.access_control import get_account_for_user
+from app.services.account_storage import account_storage_path
 from app.services.ai_providers import PROVIDERS
 from app.services.answer_jobs import answer_content_length, start_answer_job
 from app.services.secret_box import decrypt_secret
@@ -867,6 +869,30 @@ async def run_auto_answer(
 async def get_answer(account_id: uuid.UUID, answer_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(require_active_user)) -> AnswerRead:
     account = await get_account_for_user(account_id, user, db)
     return _answer_read(await _answer_for_account(account_id, answer_id, db), account.display_name)
+
+
+@router.get("/accounts/{account_id}/answers/{answer_id}/failure-screenshot")
+async def get_answer_failure_screenshot(
+    account_id: uuid.UUID,
+    answer_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> FileResponse:
+    account = await get_account_for_user(account_id, user, db)
+    await _answer_for_account(account_id, answer_id, db)
+    try:
+        screenshot_dir = account_storage_path(account.id, account.profile_key) / "screenshots"
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="知乎账号独立存储目录不存在") from exc
+    screenshots = list(screenshot_dir.glob(f"answer-{answer_id}-*.png"))
+    if not screenshots:
+        raise HTTPException(status_code=404, detail="暂无这次回答失败的诊断截图，请重新发布后再查看")
+    latest = max(screenshots, key=lambda path: path.stat().st_mtime_ns)
+    return FileResponse(
+        latest,
+        media_type="image/png",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.patch("/accounts/{account_id}/answers/{answer_id}", response_model=AnswerRead)

@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.16.4"
+        assert version.json()["version"] == "0.16.5"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -88,6 +88,9 @@ def test_qa_pages_are_functional_modules() -> None:
     assert "async function activate() { await loadBase(); }" in script
     assert "（已登录）" in script
     assert "服务器前后端版本不一致，请重新执行完整部署" in script
+    assert "answer-diagnostic" in script
+    assert "/failure-screenshot" in script
+    assert "finishedJob?.failed_count" in script
     assert 'accounts = await api("/accounts")' in script
     assert 'const providers = await api("/ai/providers")' in script
     assert (PROJECT_ROOT / "frontend/dist/assets/answer-prompts.css").is_file()

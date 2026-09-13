@@ -264,6 +264,7 @@ def test_qa_payload_parsers_extract_question_and_answer_ids() -> None:
 
 def test_answer_publisher_supports_new_write_button_and_specific_reasons() -> None:
     assert "button:has-text('写回答')" in _WRITE_ANSWER_SELECTORS
+    assert "button:text-is('回答')" in _WRITE_ANSWER_SELECTORS
     assert _answer_unavailable_reason("该问题已关闭回答") == (
         "该问题已关闭回答，无法发布"
     )

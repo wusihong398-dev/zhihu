@@ -38,6 +38,11 @@ _WRITE_ANSWER_SELECTORS = (
     "button:has-text('回答问题')",
     "[role='button']:has-text('回答问题')",
     "button:has-text('参与回答')",
+    "button:text-is('回答')",
+    "[role='button']:text-is('回答')",
+    "a:text-is('回答')",
+    ".QuestionButtonGroup button:has-text('回答')",
+    ".QuestionHeaderActions button:has-text('回答')",
     "[aria-label*='写回答']",
     "[data-za-detail-view-element_name*='Answer']:has-text('回答')",
 )
@@ -181,7 +186,7 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
         if editor is None:
             await page.evaluate("window.scrollTo(0, 0)")
             write_button = await _wait_for_visible(
-                page, _WRITE_ANSWER_SELECTORS, attempts=8
+                page, _WRITE_ANSWER_SELECTORS, attempts=20
             )
             if write_button is None:
                 body = await page.locator("body").inner_text(timeout=5000)
