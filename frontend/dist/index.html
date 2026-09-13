@@ -7,13 +7,13 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/login.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/prompt-library.css?v=0.16.0">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/login.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/prompt-library.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.16.1">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -271,18 +271,18 @@
       </div>
 
       <div id="prompt-templates-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">用户独立提示词资产</span><h1>提示词模板</h1><p>集中管理文章标题、文章正文和知乎回答提示词；模板与文件夹只属于当前登录用户。</p></div><button id="prompt-library-folder-create" class="button button-primary" type="button">＋ 新建文件夹</button></section>
+        <section class="page-heading"><div><span class="eyebrow">用户独立提示词资产</span><h1>提示词模板</h1><p>文章模板库与问答模板库分开保存、分开设置；两类模板及各自文件夹只属于当前登录用户。</p></div><button id="prompt-library-folder-create" class="button button-primary" type="button">＋ 新建文章文件夹</button></section>
         <section class="prompt-library-layout">
           <aside class="panel prompt-library-folders">
-            <div class="panel-head"><div><span class="eyebrow">模板文件夹</span><h3>分类管理</h3></div><strong id="prompt-library-folder-count">0 个</strong></div>
+            <div class="panel-head"><div><span class="eyebrow">独立分类</span><h3 id="prompt-library-folder-title">文章模板文件夹</h3></div><strong id="prompt-library-folder-count">0 个</strong></div>
             <label for="prompt-library-folder-filter">当前文件夹</label>
             <select id="prompt-library-folder-filter"><option value="all">全部模板</option><option value="unfiled">未归档</option></select>
             <div class="prompt-library-folder-actions"><button id="prompt-library-folder-rename" class="button button-ghost" type="button" disabled>文件夹改名</button><button id="prompt-library-folder-delete" class="button button-ghost danger-text" type="button" disabled>删除文件夹</button></div>
             <div class="prompt-library-summary"><span>文章模板<strong id="prompt-library-article-count">0</strong></span><span>回答模板<strong id="prompt-library-answer-count">0</strong></span></div>
-            <p class="field-help">删除文件夹不会删除模板，文件夹内模板将自动移到“未归档”。</p>
+            <p class="field-help">文章与问答使用两套独立文件夹。删除文件夹不会删除模板，文件夹内模板将自动移到“未归档”。</p>
           </aside>
           <section class="panel prompt-library-list-panel">
-            <div class="prompt-library-tabs" role="tablist"><button class="active" type="button" data-prompt-kind="article">文章提示词</button><button type="button" data-prompt-kind="answer">回答提示词</button></div>
+            <div class="prompt-library-tabs" role="tablist"><button class="active" type="button" data-prompt-kind="article">文章模板库</button><button type="button" data-prompt-kind="answer">问答模板库</button></div>
             <label class="search-box">⌕<input id="prompt-library-search" placeholder="搜索模板名称或提示词内容"></label>
             <div id="prompt-library-list" class="prompt-library-list"></div>
             <div id="prompt-library-empty" class="empty-state"><span>✎</span><h3>当前分类没有模板</h3><p>点击“新建模板”保存第一份提示词配置。</p></div>
@@ -563,9 +563,9 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.16.0" defer></script>
-  <script src="/assets/prompt-library.js?v=0.16.0" defer></script>
-  <script src="/assets/qa.js?v=0.16.0" defer></script>
-  <script src="/assets/operations.js?v=0.16.0" defer></script>
+  <script src="/assets/app.js?v=0.16.1" defer></script>
+  <script src="/assets/prompt-library.js?v=0.16.1" defer></script>
+  <script src="/assets/qa.js?v=0.16.1" defer></script>
+  <script src="/assets/operations.js?v=0.16.1" defer></script>
 </body>
 </html>

@@ -144,17 +144,47 @@ async def create_schema() -> None:
                     "folder_id UUID NULL"
                 )
             )
+            # v0.16.0 temporarily shared article folders with answer templates.
+            # Copy every referenced folder with the same UUID before moving the
+            # foreign key, so existing answer template organization is preserved.
             await connection.execute(
                 text(
-                    "DO $$ BEGIN "
-                    "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
-                    "WHERE conrelid = 'answer_prompt_templates'::regclass "
-                    "AND contype = 'f' "
-                    "AND pg_get_constraintdef(oid) LIKE "
+                    "INSERT INTO answer_prompt_folders "
+                    "(id, user_id, name, normalized_name, created_at, updated_at) "
+                    "SELECT DISTINCT f.id, f.user_id, f.name, f.normalized_name, "
+                    "f.created_at, f.updated_at "
+                    "FROM article_prompt_folders f "
+                    "JOIN answer_prompt_templates t ON t.folder_id = f.id "
+                    "ON CONFLICT (id) DO NOTHING"
+                )
+            )
+            await connection.execute(
+                text(
+                    "DO $$ DECLARE old_constraint TEXT; BEGIN "
+                    "SELECT c.conname INTO old_constraint "
+                    "FROM pg_constraint c "
+                    "JOIN pg_class target ON target.oid = c.conrelid "
+                    "JOIN pg_class referenced ON referenced.oid = c.confrelid "
+                    "WHERE target.relname = 'answer_prompt_templates' "
+                    "AND referenced.relname = 'article_prompt_folders' "
+                    "AND c.contype = 'f' "
+                    "AND pg_get_constraintdef(c.oid) LIKE "
+                    "'FOREIGN KEY (folder_id)%' LIMIT 1; "
+                    "IF old_constraint IS NOT NULL THEN "
+                    "EXECUTE format('ALTER TABLE answer_prompt_templates "
+                    "DROP CONSTRAINT %I', old_constraint); "
+                    "END IF; "
+                    "IF NOT EXISTS (SELECT 1 FROM pg_constraint c "
+                    "JOIN pg_class target ON target.oid = c.conrelid "
+                    "JOIN pg_class referenced ON referenced.oid = c.confrelid "
+                    "WHERE target.relname = 'answer_prompt_templates' "
+                    "AND referenced.relname = 'answer_prompt_folders' "
+                    "AND c.contype = 'f' "
+                    "AND pg_get_constraintdef(c.oid) LIKE "
                     "'FOREIGN KEY (folder_id)%') THEN "
                     "ALTER TABLE answer_prompt_templates ADD CONSTRAINT "
                     "fk_answer_prompt_templates_folder_id FOREIGN KEY (folder_id) "
-                    "REFERENCES article_prompt_folders(id) ON DELETE SET NULL; "
+                    "REFERENCES answer_prompt_folders(id) ON DELETE SET NULL; "
                     "END IF; END $$"
                 )
             )

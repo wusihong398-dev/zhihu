@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.16.0"
+        assert version.json()["version"] == "0.16.1"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -99,9 +99,17 @@ def test_qa_pages_are_functional_modules() -> None:
     prompt_library = (
         PROJECT_ROOT / "frontend/dist/assets/prompt-library.js"
     ).read_text(encoding="utf-8")
+    migration = (PROJECT_ROOT / "backend/app/db/session.py").read_text(
+        encoding="utf-8"
+    )
     assert "Promise.allSettled" in prompt_library
     assert "/article-prompt-templates" in prompt_library
     assert "/answer-prompt-templates" in prompt_library
+    assert "/article-prompt-folders" in prompt_library
+    assert "/answer-prompt-folders" in prompt_library
+    assert "文章模板库与问答模板库分开保存" in index
+    assert "INSERT INTO answer_prompt_folders" in migration
+    assert "REFERENCES answer_prompt_folders(id)" in migration
     assert "prompt-library.css" in bootstrap
     assert "prompt-library.js" in bootstrap
 

@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_active_user
 from app.db.session import get_db
-from app.models.answer_prompt import AnswerPromptTemplate
 from app.models.article_prompt import ArticlePromptFolder, ArticlePromptTemplate
 from app.models.user import User
 from app.schemas.article_prompt import (
@@ -90,26 +89,13 @@ async def list_prompt_folders(
         .group_by(ArticlePromptTemplate.folder_id)
         .subquery()
     )
-    answer_counts = (
-        select(
-            AnswerPromptTemplate.folder_id,
-            func.count(AnswerPromptTemplate.id).label("template_count"),
-        )
-        .where(AnswerPromptTemplate.user_id == user.id)
-        .group_by(AnswerPromptTemplate.folder_id)
-        .subquery()
-    )
     result = await db.execute(
         select(
             ArticlePromptFolder,
-            func.coalesce(article_counts.c.template_count, 0)
-            + func.coalesce(answer_counts.c.template_count, 0),
+            func.coalesce(article_counts.c.template_count, 0),
         )
         .outerjoin(
             article_counts, article_counts.c.folder_id == ArticlePromptFolder.id
-        )
-        .outerjoin(
-            answer_counts, answer_counts.c.folder_id == ArticlePromptFolder.id
         )
         .where(ArticlePromptFolder.user_id == user.id)
         .order_by(ArticlePromptFolder.name.asc())
@@ -165,14 +151,8 @@ async def update_prompt_folder(
             ArticlePromptTemplate.user_id == user.id,
         )
     )
-    answer_count = await db.scalar(
-        select(func.count(AnswerPromptTemplate.id)).where(
-            AnswerPromptTemplate.folder_id == folder.id,
-            AnswerPromptTemplate.user_id == user.id,
-        )
-    )
     return PromptFolderRead.model_validate(folder).model_copy(
-        update={"template_count": (article_count or 0) + (answer_count or 0)}
+        update={"template_count": article_count or 0}
     )
 
 

@@ -11,10 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import require_active_user
 from app.db.session import get_db
 from app.models.account import AccountStatus, ZhihuAccount
-from app.models.article_prompt import ArticlePromptFolder
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
-from app.models.answer_prompt import AnswerPromptTemplate
+from app.models.answer_prompt import AnswerPromptFolder, AnswerPromptTemplate
 from app.models.product import PromotedProduct
 from app.models.question import ZhihuQuestion
 from app.models.user import User
@@ -40,6 +39,11 @@ from app.schemas.qa import (
     QuestionCollectResponse,
     QuestionListResponse,
     QuestionRead,
+)
+from app.schemas.article_prompt import (
+    PromptFolderCreate,
+    PromptFolderRead,
+    PromptFolderUpdate,
 )
 from app.services.access_control import get_account_for_user
 from app.services.ai_providers import PROVIDERS
@@ -80,10 +84,10 @@ async def _answer_prompt_template_for_user(
 
 async def _answer_prompt_folder_for_user(
     folder_id: uuid.UUID, user: User, db: AsyncSession
-) -> ArticlePromptFolder:
-    folder = await db.get(ArticlePromptFolder, folder_id)
+) -> AnswerPromptFolder:
+    folder = await db.get(AnswerPromptFolder, folder_id)
     if folder is None or folder.user_id != user.id:
-        raise HTTPException(status_code=404, detail="提示词文件夹不存在")
+        raise HTTPException(status_code=404, detail="问答提示词文件夹不存在")
     return folder
 
 
@@ -98,13 +102,13 @@ async def _resolve_answer_prompt_folder(
     if folder_name and folder_name.strip():
         name, normalized_name = _clean_prompt_template_name(folder_name)
         folder = await db.scalar(
-            select(ArticlePromptFolder).where(
-                ArticlePromptFolder.user_id == user.id,
-                ArticlePromptFolder.normalized_name == normalized_name,
+            select(AnswerPromptFolder).where(
+                AnswerPromptFolder.user_id == user.id,
+                AnswerPromptFolder.normalized_name == normalized_name,
             )
         )
         if folder is None:
-            folder = ArticlePromptFolder(
+            folder = AnswerPromptFolder(
                 user_id=user.id, name=name, normalized_name=normalized_name
             )
             db.add(folder)
@@ -121,6 +125,106 @@ def _answer_prompt_template_read(
     )
 
 
+@router.get("/answer-prompt-folders", response_model=list[PromptFolderRead])
+async def list_answer_prompt_folders(
+    db: AsyncSession = Depends(get_db), user: User = Depends(require_active_user)
+) -> list[PromptFolderRead]:
+    counts = (
+        select(
+            AnswerPromptTemplate.folder_id,
+            func.count(AnswerPromptTemplate.id).label("template_count"),
+        )
+        .where(AnswerPromptTemplate.user_id == user.id)
+        .group_by(AnswerPromptTemplate.folder_id)
+        .subquery()
+    )
+    result = await db.execute(
+        select(
+            AnswerPromptFolder,
+            func.coalesce(counts.c.template_count, 0),
+        )
+        .outerjoin(counts, counts.c.folder_id == AnswerPromptFolder.id)
+        .where(AnswerPromptFolder.user_id == user.id)
+        .order_by(AnswerPromptFolder.name.asc())
+    )
+    return [
+        PromptFolderRead.model_validate(folder).model_copy(
+            update={"template_count": template_count}
+        )
+        for folder, template_count in result
+    ]
+
+
+@router.post(
+    "/answer-prompt-folders",
+    response_model=PromptFolderRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_answer_prompt_folder(
+    payload: PromptFolderCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> PromptFolderRead:
+    name, normalized_name = _clean_prompt_template_name(payload.name)
+    folder = AnswerPromptFolder(
+        user_id=user.id, name=name, normalized_name=normalized_name
+    )
+    db.add(folder)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="同名问答提示词文件夹已存在"
+        ) from exc
+    await db.refresh(folder)
+    return PromptFolderRead.model_validate(folder)
+
+
+@router.patch(
+    "/answer-prompt-folders/{folder_id}", response_model=PromptFolderRead
+)
+async def update_answer_prompt_folder(
+    folder_id: uuid.UUID,
+    payload: PromptFolderUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> PromptFolderRead:
+    folder = await _answer_prompt_folder_for_user(folder_id, user, db)
+    folder.name, folder.normalized_name = _clean_prompt_template_name(payload.name)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="同名问答提示词文件夹已存在"
+        ) from exc
+    await db.refresh(folder)
+    template_count = await db.scalar(
+        select(func.count(AnswerPromptTemplate.id)).where(
+            AnswerPromptTemplate.folder_id == folder.id,
+            AnswerPromptTemplate.user_id == user.id,
+        )
+    )
+    return PromptFolderRead.model_validate(folder).model_copy(
+        update={"template_count": template_count or 0}
+    )
+
+
+@router.delete(
+    "/answer-prompt-folders/{folder_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_answer_prompt_folder(
+    folder_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> None:
+    folder = await _answer_prompt_folder_for_user(folder_id, user, db)
+    await db.delete(folder)
+    await db.commit()
+
+
 @router.get(
     "/answer-prompt-templates", response_model=AnswerPromptTemplateListResponse
 )
@@ -134,10 +238,10 @@ async def list_answer_prompt_templates(
         await _answer_prompt_folder_for_user(folder_id, user, db)
         filters.append(AnswerPromptTemplate.folder_id == folder_id)
     result = await db.execute(
-        select(AnswerPromptTemplate, ArticlePromptFolder.name)
+        select(AnswerPromptTemplate, AnswerPromptFolder.name)
         .outerjoin(
-            ArticlePromptFolder,
-            ArticlePromptFolder.id == AnswerPromptTemplate.folder_id,
+            AnswerPromptFolder,
+            AnswerPromptFolder.id == AnswerPromptTemplate.folder_id,
         )
         .where(*filters)
         .order_by(
@@ -184,7 +288,7 @@ async def create_answer_prompt_template(
     await db.refresh(template)
     folder_name = None
     if template.folder_id:
-        folder_name = (await db.get(ArticlePromptFolder, template.folder_id)).name
+        folder_name = (await db.get(AnswerPromptFolder, template.folder_id)).name
     return _answer_prompt_template_read(template, folder_name)
 
 
@@ -220,7 +324,7 @@ async def update_answer_prompt_template(
     await db.refresh(template)
     folder_name = None
     if template.folder_id:
-        folder_name = (await db.get(ArticlePromptFolder, template.folder_id)).name
+        folder_name = (await db.get(AnswerPromptFolder, template.folder_id)).name
     return _answer_prompt_template_read(template, folder_name)
 
 

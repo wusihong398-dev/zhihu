@@ -178,9 +178,19 @@ def test_answer_prompt_template_crud_and_user_isolation() -> None:
             assert created.status_code == 201
             template_id = created.json()["id"]
             assert created.json()["folder_name"] == "问答模板"
-            folders = client.get("/api/article-prompt-folders").json()
+            folders = client.get("/api/answer-prompt-folders").json()
             assert folders[0]["template_count"] == 1
+            assert client.get("/api/article-prompt-folders").json() == []
             assert client.get("/api/answer-prompt-templates").json()["total"] == 1
+
+            article_folder = client.post(
+                "/api/article-prompt-folders", json={"name": "问答模板"}
+            )
+            assert article_folder.status_code == 201
+            assert article_folder.json()["id"] != folders[0]["id"]
+            assert client.get("/api/article-prompt-folders").json()[0][
+                "template_count"
+            ] == 0
 
             updated = client.patch(
                 f"/api/answer-prompt-templates/{template_id}",
@@ -194,9 +204,17 @@ def test_answer_prompt_template_crud_and_user_isolation() -> None:
             assert updated.json()["name"] == "专业回答新版"
             assert updated.json()["folder_id"] is None
             assert updated.json()["prompt"] == "先给出真实建议，再自然介绍商品。"
+            answer_folder_id = folders[0]["id"]
+            deleted_folder = client.delete(
+                f"/api/answer-prompt-folders/{answer_folder_id}"
+            )
+            assert deleted_folder.status_code == 204
+            assert client.get("/api/answer-prompt-folders").json() == []
+            assert len(client.get("/api/article-prompt-folders").json()) == 1
 
             current["user"] = SimpleNamespace(id=second_id, role=UserRole.user)
             assert client.get("/api/answer-prompt-templates").json()["total"] == 0
+            assert client.get("/api/answer-prompt-folders").json() == []
             assert (
                 client.patch(
                     f"/api/answer-prompt-templates/{template_id}",

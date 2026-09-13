@@ -2,7 +2,14 @@
   "use strict";
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  const state = { kind: "article", folders: [], articles: [], answers: [], selectedId: "" };
+  const state = {
+    kind: "article",
+    folders: { article: [], answer: [] },
+    folderFilter: { article: "all", answer: "all" },
+    articles: [],
+    answers: [],
+    selectedId: "",
+  };
 
   function escapeHtml(value) { const node = document.createElement("div"); node.textContent = value ?? ""; return node.innerHTML; }
   function toast(message, type = "success") { const node = document.createElement("div"); node.className = `toast ${type}`; node.textContent = message; $("#toast-region").appendChild(node); setTimeout(() => node.remove(), 4500); }
@@ -15,6 +22,10 @@
   }
   function setBusy(button, busy, label) { if (busy) { button.dataset.label = button.textContent; button.textContent = label; button.disabled = true; } else { button.textContent = button.dataset.label || button.textContent; button.disabled = false; } }
   function currentItems() { return state.kind === "article" ? state.articles : state.answers; }
+  function currentFolders() { return state.folders[state.kind]; }
+  function templateBase() { return state.kind === "article" ? "/article-prompt-templates" : "/answer-prompt-templates"; }
+  function folderBase() { return state.kind === "article" ? "/article-prompt-folders" : "/answer-prompt-folders"; }
+  function kindLabel() { return state.kind === "article" ? "文章" : "问答"; }
   function activeFolderId() { const value = $("#prompt-library-folder-filter").value; return ["all", "unfiled"].includes(value) ? "" : value; }
   function visibleItems() {
     const folder = $("#prompt-library-folder-filter").value;
@@ -28,17 +39,21 @@
   function renderFolders() {
     const filter = $("#prompt-library-folder-filter");
     const editor = $("#prompt-library-folder");
-    const oldFilter = filter.value || "all";
+    const folders = currentFolders();
+    const oldFilter = state.folderFilter[state.kind] || "all";
     const oldEditor = editor.value;
-    const options = state.folders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}（${item.template_count}）</option>`).join("");
+    const options = folders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}（${item.template_count}）</option>`).join("");
     filter.innerHTML = `<option value="all">全部模板</option><option value="unfiled">未归档</option>${options}`;
-    editor.innerHTML = `<option value="">未归档</option>${state.folders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
-    filter.value = ["all", "unfiled"].includes(oldFilter) || state.folders.some((item) => item.id === oldFilter) ? oldFilter : "all";
-    if (state.folders.some((item) => item.id === oldEditor)) editor.value = oldEditor;
+    editor.innerHTML = `<option value="">未归档</option>${folders.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
+    filter.value = ["all", "unfiled"].includes(oldFilter) || folders.some((item) => item.id === oldFilter) ? oldFilter : "all";
+    state.folderFilter[state.kind] = filter.value;
+    if (folders.some((item) => item.id === oldEditor)) editor.value = oldEditor;
     const hasFolder = Boolean(activeFolderId());
     $("#prompt-library-folder-rename").disabled = !hasFolder;
     $("#prompt-library-folder-delete").disabled = !hasFolder;
-    $("#prompt-library-folder-count").textContent = `${state.folders.length} 个`;
+    $("#prompt-library-folder-count").textContent = `${folders.length} 个`;
+    $("#prompt-library-folder-title").textContent = `${kindLabel()}模板文件夹`;
+    $("#prompt-library-folder-create").textContent = `＋ 新建${kindLabel()}文件夹`;
     $("#prompt-library-article-count").textContent = state.articles.length;
     $("#prompt-library-answer-count").textContent = state.answers.length;
   }
@@ -98,11 +113,18 @@
   }
   async function load(silent = true) {
     const failures = [];
-    const [folders, articles, answers] = await Promise.allSettled([api("/article-prompt-folders"), api("/article-prompt-templates"), api("/answer-prompt-templates")]);
-    state.folders = folders.status === "fulfilled" ? folders.value : [];
+    const [articleFolders, answerFolders, articles, answers] = await Promise.allSettled([
+      api("/article-prompt-folders"),
+      api("/answer-prompt-folders"),
+      api("/article-prompt-templates"),
+      api("/answer-prompt-templates"),
+    ]);
+    state.folders.article = articleFolders.status === "fulfilled" ? articleFolders.value : [];
+    state.folders.answer = answerFolders.status === "fulfilled" ? answerFolders.value : [];
     state.articles = articles.status === "fulfilled" ? articles.value.items : [];
     state.answers = answers.status === "fulfilled" ? answers.value.items : [];
-    if (folders.status === "rejected") failures.push(`文件夹：${folders.reason.message}`);
+    if (articleFolders.status === "rejected") failures.push(`文章文件夹：${articleFolders.reason.message}`);
+    if (answerFolders.status === "rejected") failures.push(`问答文件夹：${answerFolders.reason.message}`);
     if (articles.status === "rejected") failures.push(`文章模板：${articles.reason.message}`);
     if (answers.status === "rejected") failures.push(`回答模板：${answers.reason.message}`);
     renderFolders();
@@ -119,7 +141,7 @@
     if (!asNew && !state.selectedId) return;
     setBusy(button, true, "保存中…");
     try {
-      const base = state.kind === "article" ? "/article-prompt-templates" : "/answer-prompt-templates";
+      const base = templateBase();
       const saved = await api(asNew ? base : `${base}/${state.selectedId}`, { method: asNew ? "POST" : "PATCH", body: JSON.stringify(body) });
       state.selectedId = saved.id;
       await load(true);
@@ -134,7 +156,7 @@
     const name = window.prompt("请输入新的模板名称", item.name);
     if (!name?.trim() || name.trim() === item.name) return;
     try {
-      const base = state.kind === "article" ? "/article-prompt-templates" : "/answer-prompt-templates";
+      const base = templateBase();
       await api(`${base}/${item.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
       await load(true); selectTemplate(item.id); toast("模板已重命名");
     } catch (error) { toast(error.message, "error"); }
@@ -143,53 +165,56 @@
     const item = currentItems().find((entry) => entry.id === state.selectedId);
     if (!item || !window.confirm(`确定删除模板“${item.name}”吗？`)) return;
     try {
-      const base = state.kind === "article" ? "/article-prompt-templates" : "/answer-prompt-templates";
+      const base = templateBase();
       await api(`${base}/${item.id}`, { method: "DELETE" });
       state.selectedId = ""; await load(true); newTemplate(); toast("模板已删除");
     } catch (error) { toast(error.message, "error"); }
   }
   async function createFolder() {
-    const name = window.prompt("请输入新模板文件夹名称");
+    const name = window.prompt(`请输入新${kindLabel()}提示词文件夹名称`);
     if (!name?.trim()) return;
     try {
-      const folder = await api("/article-prompt-folders", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      const folder = await api(folderBase(), { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      state.folderFilter[state.kind] = folder.id;
       await load(true);
       $("#prompt-library-folder-filter").value = folder.id;
       $("#prompt-library-folder").value = folder.id;
-      renderFolders(); renderList(); toast("模板文件夹已创建");
+      renderFolders(); renderList(); toast(`${kindLabel()}模板文件夹已创建`);
     } catch (error) { toast(error.message, "error"); }
   }
   async function renameFolder() {
     const id = activeFolderId();
-    const folder = state.folders.find((item) => item.id === id);
+    const folder = currentFolders().find((item) => item.id === id);
     if (!folder) return;
     const name = window.prompt("请输入新的文件夹名称", folder.name);
     if (!name?.trim() || name.trim() === folder.name) return;
     try {
-      await api(`/article-prompt-folders/${id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
-      await load(true); $("#prompt-library-folder-filter").value = id; renderFolders(); renderList(); toast("文件夹已重命名");
+      await api(`${folderBase()}/${id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      state.folderFilter[state.kind] = id;
+      await load(true); renderFolders(); renderList(); toast(`${kindLabel()}文件夹已重命名`);
     } catch (error) { toast(error.message, "error"); }
   }
   async function deleteFolder() {
     const id = activeFolderId();
-    const folder = state.folders.find((item) => item.id === id);
-    if (!folder || !window.confirm(`删除文件夹“${folder.name}”？其中模板会保留并移到未归档。`)) return;
+    const folder = currentFolders().find((item) => item.id === id);
+    if (!folder || !window.confirm(`删除${kindLabel()}文件夹“${folder.name}”？其中模板会保留并移到未归档。`)) return;
     try {
-      await api(`/article-prompt-folders/${id}`, { method: "DELETE" });
-      state.selectedId = ""; await load(true); $("#prompt-library-folder-filter").value = "all"; renderFolders(); renderList(); newTemplate(); toast("文件夹已删除，模板已保留");
+      await api(`${folderBase()}/${id}`, { method: "DELETE" });
+      state.selectedId = ""; state.folderFilter[state.kind] = "all"; await load(true); renderFolders(); renderList(); newTemplate(); toast(`${kindLabel()}文件夹已删除，模板已保留`);
     } catch (error) { toast(error.message, "error"); }
   }
   function switchKind(kind) {
+    state.folderFilter[state.kind] = $("#prompt-library-folder-filter").value || "all";
     state.kind = kind; state.selectedId = "";
     $$("[data-prompt-kind]").forEach((button) => button.classList.toggle("active", button.dataset.promptKind === kind));
-    renderList(); newTemplate();
+    renderFolders(); renderList(); newTemplate();
   }
   async function activate() { await load(true); if (!state.selectedId) newTemplate(); }
   function bind() {
     $("#prompt-library-folder-create").addEventListener("click", createFolder);
     $("#prompt-library-folder-rename").addEventListener("click", renameFolder);
     $("#prompt-library-folder-delete").addEventListener("click", deleteFolder);
-    $("#prompt-library-folder-filter").addEventListener("change", () => { state.selectedId = ""; renderFolders(); renderList(); newTemplate(); });
+    $("#prompt-library-folder-filter").addEventListener("change", () => { state.folderFilter[state.kind] = $("#prompt-library-folder-filter").value; state.selectedId = ""; renderFolders(); renderList(); newTemplate(); });
     $("#prompt-library-search").addEventListener("input", renderList);
     $$("[data-prompt-kind]").forEach((button) => button.addEventListener("click", () => switchKind(button.dataset.promptKind)));
     $("#prompt-library-new-template").addEventListener("click", newTemplate);
