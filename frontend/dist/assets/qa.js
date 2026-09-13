@@ -29,7 +29,7 @@
       accounts = await api("/accounts");
       state.accounts = accounts;
       const options = `<option value="">请选择知乎账号</option>${accountOptions()}`;
-      ["#question-collect-account", "#question-list-account", "#answer-list-account", "#auto-answer-account"].forEach((id) => { const select = $(id); const old = select.value; select.innerHTML = options; if (accounts.some((item) => item.id === old)) select.value = old; else if (accounts.length === 1) select.value = accounts[0].id; });
+      ["#question-collect-account", "#question-list-account", "#answer-list-account", "#auto-answer-account"].forEach((id) => { const select = $(id); const old = select.value; select.innerHTML = options; if (accounts.some((item) => item.id === old)) select.value = old; else if (accounts.length) select.value = accounts[0].id; });
     } catch (error) {
       state.accounts = [];
       if (!/401|登录/.test(error.message)) toast(`知乎账号加载失败：${error.message}`, "error");
@@ -67,7 +67,7 @@
   function renderAnswerPromptTemplates(selectedId = "") {
     const select = $("#answer-prompt-template-select");
     const activeId = selectedId || select.value;
-    select.innerHTML = `<option value="">当前未使用已保存模板</option>${state.answerPromptTemplates.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
+    select.innerHTML = `<option value="">当前未使用已保存模板</option>${state.answerPromptTemplates.map((item) => `<option value="${item.id}">${escapeHtml(item.folder_name ? `${item.folder_name} / ${item.name}` : item.name)}</option>`).join("")}`;
     if (state.answerPromptTemplates.some((item) => item.id === activeId)) select.value = activeId;
     const hasTemplate = Boolean(select.value);
     select.disabled = !state.answerPromptTemplatesAvailable;
@@ -90,9 +90,10 @@
     if (!promptText) return toast("回答提示词不能为空", "error");
     const name = window.prompt("请输入新模板名称");
     if (!name?.trim()) return;
+    const folderName = window.prompt("保存到模板文件夹（可留空）", "") || "";
     const button = $("#answer-prompt-template-create"); setBusy(button, true, "创建中…");
     try {
-      const template = await api("/answer-prompt-templates", { method: "POST", body: JSON.stringify({ name: name.trim(), prompt: promptText }) });
+      const template = await api("/answer-prompt-templates", { method: "POST", body: JSON.stringify({ name: name.trim(), folder_name: folderName.trim() || null, prompt: promptText }) });
       const result = await api("/answer-prompt-templates"); state.answerPromptTemplates = result.items;
       renderAnswerPromptTemplates(template.id); toast("回答提示词模板已创建");
     } catch (error) { toast(error.message, "error"); }
@@ -147,7 +148,14 @@
     try {
       const products = await api(`/accounts/${accountId}/products?limit=500`);
       state.products = products.items.filter((item) => item.enabled);
-      $("#answer-generate-product").innerHTML = state.products.length ? state.products.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("") : `<option value="">请先添加启用的推广商品</option>`;
+      const productSelect = $("#answer-generate-product");
+      const oldProduct = productSelect.value;
+      const account = state.accounts.find((item) => item.id === accountId);
+      productSelect.innerHTML = state.products.length
+        ? `<option value="">请选择${escapeHtml(account?.display_name || "当前账号")}的推广商品</option>${state.products.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`
+        : `<option value="">当前账号“${escapeHtml(account?.display_name || "")}”没有启用商品</option>`;
+      if (state.products.some((item) => item.id === oldProduct)) productSelect.value = oldProduct;
+      else if (state.products.length === 1) productSelect.value = state.products[0].id;
     } catch (error) { toast(error.message, "error"); }
     state.questionPage = 1; state.selectedQuestions.clear(); await loadQuestions(true);
   }

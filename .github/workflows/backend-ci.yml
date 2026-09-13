@@ -59,6 +59,8 @@ jobs:
         run: node --check ../frontend/dist/assets/app.js
       - name: Check Q&A frontend
         run: node --check ../frontend/dist/assets/qa.js
+      - name: Check prompt library frontend
+        run: node --check ../frontend/dist/assets/prompt-library.js
       - name: Check operations frontend
         run: node --check ../frontend/dist/assets/operations.js
       - name: Run tests

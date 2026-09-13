@@ -7,12 +7,13 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.15.3">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.15.3">
-  <link rel="stylesheet" href="/assets/login.css?v=0.15.3">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.15.3">
-  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.15.3">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.15.3">
+  <link rel="stylesheet" href="/assets/app.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/prompt-library.css?v=0.16.0">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.16.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -61,10 +62,11 @@
           <summary><span><i>◎</i>账号</span><small>›</small></summary>
           <div class="nav-children">
             <button class="nav-item" data-page="accounts">知乎账号</button>
-            <button class="nav-item" data-page="products">推广商品</button>
             <button class="nav-item" data-page="ai">AI 配置</button>
           </div>
         </details>
+        <button class="nav-item nav-primary-module" data-page="products"><span class="nav-icon">▣</span>商品管理</button>
+        <button class="nav-item nav-primary-module" data-page="prompt-templates"><span class="nav-icon">✎</span>提示词模板</button>
         <details class="nav-section" data-nav-section="keyword">
           <summary><span><i>⌕</i>关键词</span><small>›</small></summary>
           <div class="nav-children">
@@ -140,9 +142,10 @@
           <div id="overview-empty" class="empty-state" hidden><span>◎</span><h3>还没有知乎账号</h3><p>添加第一个账号后，即可设置每天的文章和回答数量。</p><button class="button button-primary" data-open-account>添加账号</button></div>
         </section>
         <section class="panel module-overview-panel">
-          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">16 个模块</span></div>
+          <div class="panel-head"><div><span class="eyebrow">完整功能架构</span><h3>运营流程</h3></div><span class="badge">18 个模块</span></div>
           <div class="module-shortcuts">
-            <button data-page-link="products"><span>▣</span><strong>推广商品</strong><small>商品资料与推广要求</small></button>
+            <button data-page-link="products"><span>▣</span><strong>商品管理</strong><small>账号独立商品资料</small></button>
+            <button data-page-link="prompt-templates"><span>✎</span><strong>提示词模板</strong><small>标题、正文与回答模板</small></button>
             <button data-page-link="keywords"><span>⌕</span><strong>关键词中心</strong><small>采集、文件夹与筛选</small></button>
             <button data-page-link="local-media"><span>▧</span><strong>本地图片库</strong><small>图片、压缩包与随机调用</small></button>
             <button data-page-link="article-generate"><span>✦</span><strong>文章生成</strong><small>提示词与批量生成</small></button>
@@ -255,7 +258,7 @@
       </div>
 
       <div id="products-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">账号独立推广资料</span><h1>推广商品</h1><p>为不同知乎账号保存商品名称、卖点、目标人群、固定链接和内容禁区，生成文章与回答时自动调用。</p></div><button id="product-add" class="button button-primary">＋ 添加商品</button></section>
+        <section class="page-heading"><div><span class="eyebrow">账号独立推广资料</span><h1>商品管理</h1><p>为不同知乎账号保存商品名称、卖点、目标人群、固定链接和内容禁区，生成文章与回答时自动调用。</p></div><button id="product-add" class="button button-primary">＋ 添加商品</button></section>
         <section class="panel product-panel">
           <div class="product-toolbar">
             <div><label for="product-account">知乎账号</label><select id="product-account"><option value="">请先选择账号</option></select></div>
@@ -264,6 +267,37 @@
           </div>
           <div id="product-list" class="product-grid"></div>
           <div id="product-empty" class="empty-state"><span>▣</span><h3>还没有推广商品</h3><p>先选择知乎账号，再添加该账号需要推广的商品资料。</p><button id="product-empty-add" class="button button-primary">添加商品</button></div>
+        </section>
+      </div>
+
+      <div id="prompt-templates-page" class="page">
+        <section class="page-heading"><div><span class="eyebrow">用户独立提示词资产</span><h1>提示词模板</h1><p>集中管理文章标题、文章正文和知乎回答提示词；模板与文件夹只属于当前登录用户。</p></div><button id="prompt-library-folder-create" class="button button-primary" type="button">＋ 新建文件夹</button></section>
+        <section class="prompt-library-layout">
+          <aside class="panel prompt-library-folders">
+            <div class="panel-head"><div><span class="eyebrow">模板文件夹</span><h3>分类管理</h3></div><strong id="prompt-library-folder-count">0 个</strong></div>
+            <label for="prompt-library-folder-filter">当前文件夹</label>
+            <select id="prompt-library-folder-filter"><option value="all">全部模板</option><option value="unfiled">未归档</option></select>
+            <div class="prompt-library-folder-actions"><button id="prompt-library-folder-rename" class="button button-ghost" type="button" disabled>文件夹改名</button><button id="prompt-library-folder-delete" class="button button-ghost danger-text" type="button" disabled>删除文件夹</button></div>
+            <div class="prompt-library-summary"><span>文章模板<strong id="prompt-library-article-count">0</strong></span><span>回答模板<strong id="prompt-library-answer-count">0</strong></span></div>
+            <p class="field-help">删除文件夹不会删除模板，文件夹内模板将自动移到“未归档”。</p>
+          </aside>
+          <section class="panel prompt-library-list-panel">
+            <div class="prompt-library-tabs" role="tablist"><button class="active" type="button" data-prompt-kind="article">文章提示词</button><button type="button" data-prompt-kind="answer">回答提示词</button></div>
+            <label class="search-box">⌕<input id="prompt-library-search" placeholder="搜索模板名称或提示词内容"></label>
+            <div id="prompt-library-list" class="prompt-library-list"></div>
+            <div id="prompt-library-empty" class="empty-state"><span>✎</span><h3>当前分类没有模板</h3><p>点击“新建模板”保存第一份提示词配置。</p></div>
+          </section>
+          <section class="panel prompt-library-editor">
+            <div class="panel-head"><div><span class="eyebrow">模板编辑器</span><h3 id="prompt-library-editor-title">新建文章提示词模板</h3></div><button id="prompt-library-new-template" class="button button-ghost" type="button">＋ 新建模板</button></div>
+            <div class="form-body">
+              <div class="field-grid"><div><label for="prompt-library-name">模板名称</label><input id="prompt-library-name" maxlength="120" placeholder="例如：专业测评文章"></div><div><label for="prompt-library-folder">保存到文件夹</label><select id="prompt-library-folder"><option value="">未归档</option></select></div></div>
+              <div id="prompt-library-article-fields"><label for="prompt-library-title-prompt">标题提示词</label><textarea id="prompt-library-title-prompt" rows="4" maxlength="10000" placeholder="用于生成文章标题的提示词"></textarea><label for="prompt-library-content-prompt">正文提示词</label><textarea id="prompt-library-content-prompt" rows="9" maxlength="20000" placeholder="用于生成文章正文的提示词"></textarea></div>
+              <div id="prompt-library-answer-fields" hidden><label for="prompt-library-answer-prompt">回答提示词</label><textarea id="prompt-library-answer-prompt" rows="12" maxlength="20000" placeholder="用于生成知乎回答的提示词"></textarea></div>
+              <p class="field-help">文章模板包含“标题提示词＋正文提示词”；回答模板保存独立的回答提示词。支持变量：{关键词}、{商品名称}、{商品卖点}、{目标人群}、{推广链接}。</p>
+              <p id="prompt-library-error" class="form-error"></p>
+              <div class="prompt-library-editor-actions"><button id="prompt-library-save-new" class="button button-primary" type="button">保存为新模板</button><button id="prompt-library-save-current" class="button button-ghost" type="button" disabled>保存当前模板</button><button id="prompt-library-template-rename" class="button button-ghost" type="button" disabled>模板改名</button><button id="prompt-library-template-delete" class="button button-ghost danger-text" type="button" disabled>删除模板</button></div>
+            </div>
+          </section>
         </section>
       </div>
 
@@ -529,8 +563,9 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.15.3" defer></script>
-  <script src="/assets/qa.js?v=0.15.3" defer></script>
-  <script src="/assets/operations.js?v=0.15.3" defer></script>
+  <script src="/assets/app.js?v=0.16.0" defer></script>
+  <script src="/assets/prompt-library.js?v=0.16.0" defer></script>
+  <script src="/assets/qa.js?v=0.16.0" defer></script>
+  <script src="/assets/operations.js?v=0.16.0" defer></script>
 </body>
 </html>

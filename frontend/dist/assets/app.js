@@ -1881,8 +1881,8 @@
     $$(".page").forEach((item) => item.classList.toggle("active-page", item.id === `${page}-page`));
     const articleTitles = { draft: "草稿文章", ready: "待发布文章", published: "已发布文章", failed: "发布失败文章" };
     const answerTitles = { draft: "草稿回答", ready: "待发布回答", published: "已发布回答", failed: "发布失败回答" };
-    const titles = { overview: "运行概览", accounts: "知乎账号", products: "推广商品", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "local-media": "本地图片库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
-    const kickers = { overview: "工作台", accounts: "账号", products: "账号", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "local-media": "文章", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
+    const titles = { overview: "运行概览", accounts: "知乎账号", products: "商品管理", "prompt-templates": "提示词模板", "keyword-collect": "关键词采集", keywords: "关键词列表", "keyword-recycle": "回收关键词库", "local-media": "本地图片库", "article-generate": "生成文章", articles: articleTitles[articleStatus] || "文章列表", "article-publish": "发布任务", questions: "问题采集与列表", answers: answerTitles[answerStatus] || "回答列表", "auto-answer": "自动回答", schedules: "定时计划", logs: "运行日志", ai: "AI 配置", users: "用户管理", settings: "系统设置" };
+    const kickers = { overview: "工作台", accounts: "账号", products: "内容资产", "prompt-templates": "内容资产", ai: "账号", "keyword-collect": "关键词", keywords: "关键词", "keyword-recycle": "关键词", "local-media": "文章", "article-generate": "文章", articles: "文章", "article-publish": "文章", questions: "问答", answers: "问答", "auto-answer": "问答", schedules: "任务与系统", logs: "任务与系统", users: "任务与系统", settings: "任务与系统" };
     $("#page-title").textContent = titles[page] || "运行概览";
     $("#page-kicker").textContent = kickers[page] || "工作台";
     $(".sidebar").classList.remove("open");
@@ -1891,6 +1891,7 @@
     if (page === "keyword-recycle") loadRecycledKeywords(true);
     if (page === "local-media") loadMedia(true);
     if (page === "products") loadProducts(true);
+    if (page === "prompt-templates") window.TotodPromptLibrary?.activate();
     if (page === "users") loadUsers(true);
     if (page === "article-generate") { loadArticleGenerator(false); loadLatestArticleJob("generate"); }
     if (page === "articles") { loadArticles(true); loadLatestArticleJob("publish"); }
@@ -1899,6 +1900,7 @@
 
   function refreshCurrentPage() {
     if (state.page === "products") return loadProducts();
+    if (state.page === "prompt-templates") return window.TotodPromptLibrary?.refresh();
     if (["keyword-collect", "keywords"].includes(state.page)) return loadKeywordData();
     if (state.page === "keyword-recycle") return loadRecycledKeywords();
     if (state.page === "local-media") return loadMedia();

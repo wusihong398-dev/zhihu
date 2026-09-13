@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.15.3"
+        assert version.json()["version"] == "0.16.0"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -90,6 +90,20 @@ def test_qa_pages_are_functional_modules() -> None:
     assert (PROJECT_ROOT / "frontend/dist/assets/answer-prompts.css").is_file()
     bootstrap = (PROJECT_ROOT / "scripts/bootstrap_server.sh").read_text(encoding="utf-8")
     assert "answer-prompts.css" in bootstrap
+    assert 'data-page="products"' in index
+    assert 'data-page="prompt-templates"' in index
+    assert 'id="prompt-templates-page"' in index
+    assert 'id="prompt-library-title-prompt"' in index
+    assert 'id="prompt-library-content-prompt"' in index
+    assert 'id="prompt-library-answer-prompt"' in index
+    prompt_library = (
+        PROJECT_ROOT / "frontend/dist/assets/prompt-library.js"
+    ).read_text(encoding="utf-8")
+    assert "Promise.allSettled" in prompt_library
+    assert "/article-prompt-templates" in prompt_library
+    assert "/answer-prompt-templates" in prompt_library
+    assert "prompt-library.css" in bootstrap
+    assert "prompt-library.js" in bootstrap
 
 
 def test_operations_pages_are_functional_modules() -> None:

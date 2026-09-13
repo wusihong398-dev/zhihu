@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import require_active_user
 from app.db.session import get_db
 from app.models.account import AccountStatus, ZhihuAccount
+from app.models.article_prompt import ArticlePromptFolder
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
 from app.models.answer_prompt import AnswerPromptTemplate
@@ -77,25 +78,77 @@ async def _answer_prompt_template_for_user(
     return template
 
 
+async def _answer_prompt_folder_for_user(
+    folder_id: uuid.UUID, user: User, db: AsyncSession
+) -> ArticlePromptFolder:
+    folder = await db.get(ArticlePromptFolder, folder_id)
+    if folder is None or folder.user_id != user.id:
+        raise HTTPException(status_code=404, detail="提示词文件夹不存在")
+    return folder
+
+
+async def _resolve_answer_prompt_folder(
+    folder_id: uuid.UUID | None,
+    folder_name: str | None,
+    user: User,
+    db: AsyncSession,
+) -> uuid.UUID | None:
+    if folder_id is not None:
+        return (await _answer_prompt_folder_for_user(folder_id, user, db)).id
+    if folder_name and folder_name.strip():
+        name, normalized_name = _clean_prompt_template_name(folder_name)
+        folder = await db.scalar(
+            select(ArticlePromptFolder).where(
+                ArticlePromptFolder.user_id == user.id,
+                ArticlePromptFolder.normalized_name == normalized_name,
+            )
+        )
+        if folder is None:
+            folder = ArticlePromptFolder(
+                user_id=user.id, name=name, normalized_name=normalized_name
+            )
+            db.add(folder)
+            await db.flush()
+        return folder.id
+    return None
+
+
+def _answer_prompt_template_read(
+    template: AnswerPromptTemplate, folder_name: str | None = None
+) -> AnswerPromptTemplateRead:
+    return AnswerPromptTemplateRead.model_validate(template).model_copy(
+        update={"folder_name": folder_name}
+    )
+
+
 @router.get(
     "/answer-prompt-templates", response_model=AnswerPromptTemplateListResponse
 )
 async def list_answer_prompt_templates(
+    folder_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_active_user),
 ) -> AnswerPromptTemplateListResponse:
-    items = list(
-        (
-            await db.execute(
-                select(AnswerPromptTemplate)
-                .where(AnswerPromptTemplate.user_id == user.id)
-                .order_by(
-                    AnswerPromptTemplate.updated_at.desc(),
-                    AnswerPromptTemplate.name.asc(),
-                )
-            )
-        ).scalars()
+    filters = [AnswerPromptTemplate.user_id == user.id]
+    if folder_id is not None:
+        await _answer_prompt_folder_for_user(folder_id, user, db)
+        filters.append(AnswerPromptTemplate.folder_id == folder_id)
+    result = await db.execute(
+        select(AnswerPromptTemplate, ArticlePromptFolder.name)
+        .outerjoin(
+            ArticlePromptFolder,
+            ArticlePromptFolder.id == AnswerPromptTemplate.folder_id,
+        )
+        .where(*filters)
+        .order_by(
+            AnswerPromptTemplate.updated_at.desc(),
+            AnswerPromptTemplate.name.asc(),
+        )
     )
+    items = [
+        _answer_prompt_template_read(template, folder_name)
+        for template, folder_name in result
+    ]
     return AnswerPromptTemplateListResponse(items=items, total=len(items))
 
 
@@ -108,10 +161,14 @@ async def create_answer_prompt_template(
     payload: AnswerPromptTemplateCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_active_user),
-) -> AnswerPromptTemplate:
+) -> AnswerPromptTemplateRead:
     name, normalized_name = _clean_prompt_template_name(payload.name)
+    folder_id = await _resolve_answer_prompt_folder(
+        payload.folder_id, payload.folder_name, user, db
+    )
     template = AnswerPromptTemplate(
         user_id=user.id,
+        folder_id=folder_id,
         name=name,
         normalized_name=normalized_name,
         prompt=_clean_answer_prompt(payload.prompt),
@@ -121,9 +178,14 @@ async def create_answer_prompt_template(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="同名回答提示词模板已存在") from exc
+        raise HTTPException(
+            status_code=409, detail="同名回答提示词模板已存在"
+        ) from exc
     await db.refresh(template)
-    return template
+    folder_name = None
+    if template.folder_id:
+        folder_name = (await db.get(ArticlePromptFolder, template.folder_id)).name
+    return _answer_prompt_template_read(template, folder_name)
 
 
 @router.patch(
@@ -135,21 +197,31 @@ async def update_answer_prompt_template(
     payload: AnswerPromptTemplateUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_active_user),
-) -> AnswerPromptTemplate:
+) -> AnswerPromptTemplateRead:
     template = await _answer_prompt_template_for_user(template_id, user, db)
-    if payload.name is not None:
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes:
         template.name, template.normalized_name = _clean_prompt_template_name(
-            payload.name
+            changes["name"]
         )
-    if payload.prompt is not None:
-        template.prompt = _clean_answer_prompt(payload.prompt)
+    if "folder_id" in changes or "folder_name" in changes:
+        template.folder_id = await _resolve_answer_prompt_folder(
+            changes.get("folder_id"), changes.get("folder_name"), user, db
+        )
+    if "prompt" in changes:
+        template.prompt = _clean_answer_prompt(changes["prompt"])
     try:
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="同名回答提示词模板已存在") from exc
+        raise HTTPException(
+            status_code=409, detail="同名回答提示词模板已存在"
+        ) from exc
     await db.refresh(template)
-    return template
+    folder_name = None
+    if template.folder_id:
+        folder_name = (await db.get(ArticlePromptFolder, template.folder_id)).name
+    return _answer_prompt_template_read(template, folder_name)
 
 
 @router.delete(

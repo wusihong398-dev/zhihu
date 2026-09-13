@@ -169,18 +169,30 @@ def test_answer_prompt_template_crud_and_user_isolation() -> None:
 
             created = client.post(
                 "/api/answer-prompt-templates",
-                json={"name": "专业回答", "prompt": "先解决问题，再自然介绍商品。"},
+                json={
+                    "name": "专业回答",
+                    "folder_name": "问答模板",
+                    "prompt": "先解决问题，再自然介绍商品。",
+                },
             )
             assert created.status_code == 201
             template_id = created.json()["id"]
+            assert created.json()["folder_name"] == "问答模板"
+            folders = client.get("/api/article-prompt-folders").json()
+            assert folders[0]["template_count"] == 1
             assert client.get("/api/answer-prompt-templates").json()["total"] == 1
 
             updated = client.patch(
                 f"/api/answer-prompt-templates/{template_id}",
-                json={"name": "专业回答新版", "prompt": "先给出真实建议，再自然介绍商品。"},
+                json={
+                    "name": "专业回答新版",
+                    "folder_id": None,
+                    "prompt": "先给出真实建议，再自然介绍商品。",
+                },
             )
             assert updated.status_code == 200
             assert updated.json()["name"] == "专业回答新版"
+            assert updated.json()["folder_id"] is None
             assert updated.json()["prompt"] == "先给出真实建议，再自然介绍商品。"
 
             current["user"] = SimpleNamespace(id=second_id, role=UserRole.user)

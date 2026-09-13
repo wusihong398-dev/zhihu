@@ -82,17 +82,21 @@ class AnswerGenerateRequest(BaseModel):
 
 class AnswerPromptTemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    folder_id: uuid.UUID | None = None
+    folder_name: str | None = Field(default=None, max_length=100)
     prompt: str = Field(min_length=1, max_length=20000)
 
 
 class AnswerPromptTemplateUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    folder_id: uuid.UUID | None = None
+    folder_name: str | None = Field(default=None, max_length=100)
     prompt: str | None = Field(default=None, min_length=1, max_length=20000)
 
     @model_validator(mode="after")
     def require_change(self):
-        if self.name is None and self.prompt is None:
-            raise ValueError("至少需要修改模板名称或回答提示词")
+        if not self.model_fields_set:
+            raise ValueError("至少需要修改模板名称、文件夹或回答提示词")
         return self
 
 
@@ -100,6 +104,8 @@ class AnswerPromptTemplateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    folder_id: uuid.UUID | None
+    folder_name: str | None = None
     name: str
     prompt: str
     created_at: datetime

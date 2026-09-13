@@ -137,6 +137,33 @@ async def create_schema() -> None:
                     "ON articles (local_image_id)"
                 )
             )
+        if engine.dialect.name == "postgresql":
+            await connection.execute(
+                text(
+                    "ALTER TABLE answer_prompt_templates ADD COLUMN IF NOT EXISTS "
+                    "folder_id UUID NULL"
+                )
+            )
+            await connection.execute(
+                text(
+                    "DO $$ BEGIN "
+                    "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                    "WHERE conrelid = 'answer_prompt_templates'::regclass "
+                    "AND contype = 'f' "
+                    "AND pg_get_constraintdef(oid) LIKE "
+                    "'FOREIGN KEY (folder_id)%') THEN "
+                    "ALTER TABLE answer_prompt_templates ADD CONSTRAINT "
+                    "fk_answer_prompt_templates_folder_id FOREIGN KEY (folder_id) "
+                    "REFERENCES article_prompt_folders(id) ON DELETE SET NULL; "
+                    "END IF; END $$"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_answer_prompt_templates_folder_id "
+                    "ON answer_prompt_templates (folder_id)"
+                )
+            )
         # Older versions accepted /p/<id>/edit as a successful publication.
         # Such a URL only proves that an editor draft exists, so make the
         # historical record honest and allow the user to publish it again.
