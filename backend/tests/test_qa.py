@@ -1,15 +1,39 @@
+import asyncio
 import uuid
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.api.qa import _quota_used_today
 from app.core.security import require_active_user
 from app.main import app
+from app.models.account import ZhihuAccount
 from app.models.user import UserRole
 from app.services.zhihu_question_collector import ZhihuQuestionCandidate
 
 
 ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
+
+
+def test_answer_quota_counts_only_successful_publications() -> None:
+    captured = {}
+
+    class FakeSession:
+        async def scalar(self, statement):
+            captured["sql"] = str(statement)
+            return 1
+
+    account = ZhihuAccount(
+        id=uuid.uuid4(),
+        display_name="额度测试账号",
+        timezone="Asia/Shanghai",
+    )
+    used = asyncio.run(_quota_used_today(account, FakeSession()))
+
+    assert used == 1
+    assert "zhihu_answers.status" in captured["sql"]
+    assert "zhihu_answers.published_at" in captured["sql"]
+    assert "zhihu_answers.publish_attempted_at" not in captured["sql"]
 
 
 def test_question_collection_answer_crud_and_daily_queue(monkeypatch) -> None:

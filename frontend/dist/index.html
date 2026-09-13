@@ -7,13 +7,13 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/login.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/prompt-library.css?v=0.16.1">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.16.1">
+  <link rel="stylesheet" href="/assets/app.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/login.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/answer-prompts.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/prompt-library.css?v=0.16.2">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.16.2">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -416,7 +416,7 @@
 
       <div id="auto-answer-page" class="page">
         <section class="page-heading"><div><span class="eyebrow">真实回答发布队列</span><h1>自动回答</h1><p>按账号每日回答额度依次发布“待发布”回答；登录失效、安全验证或平台拒绝时保留失败原因。</p></div><button class="button button-primary" data-page-link="answers">管理回答</button></section>
-        <section class="panel auto-answer-panel"><div class="qa-toolbar"><div><label for="auto-answer-account">知乎账号</label><select id="auto-answer-account"><option value="">请选择知乎账号</option></select></div><button id="auto-answer-run" class="button button-primary" type="button" disabled>立即执行今日队列</button></div><div class="metrics qa-metrics"><article class="metric-card accent-blue"><span>每日额度</span><strong id="auto-daily-limit">0</strong><small>该账号设置</small></article><article class="metric-card accent-violet"><span>今日已尝试</span><strong id="auto-attempted">0</strong><small>成功和失败均计入</small></article><article class="metric-card accent-green"><span>今日剩余</span><strong id="auto-remaining">0</strong><small>防止超额发布</small></article><article class="metric-card accent-cyan"><span>待发布回答</span><strong id="auto-ready">0</strong><small>可进入自动队列</small></article></div><div id="auto-answer-job" class="article-job-panel standalone"><div class="job-status-row"><div><span id="auto-job-status" class="badge off">暂无任务</span><strong id="auto-job-percent">0%</strong></div><span id="auto-job-count">0 / 0</span></div><div class="progress-track"><i id="auto-job-bar"></i></div><p id="auto-job-current">选择账号后可执行今日回答队列</p><p id="auto-job-message" class="job-message"></p><div class="job-controls"><button id="auto-job-pause" class="button button-ghost" disabled>暂停</button><button id="auto-job-resume" class="button button-primary" disabled>继续</button><button id="auto-job-stop" class="button button-ghost danger-text" disabled>停止</button></div></div></section>
+        <section class="panel auto-answer-panel"><div class="qa-toolbar"><div><label for="auto-answer-account">知乎账号</label><select id="auto-answer-account"><option value="">请选择知乎账号</option></select></div><button id="auto-answer-run" class="button button-primary" type="button" disabled>立即执行今日队列</button></div><div class="metrics qa-metrics"><article class="metric-card accent-blue"><span>每日额度</span><strong id="auto-daily-limit">0</strong><small>该账号设置</small></article><article class="metric-card accent-violet"><span>今日发布成功</span><strong id="auto-published">0</strong><small>仅成功发布占用额度</small></article><article class="metric-card accent-green"><span>今日剩余</span><strong id="auto-remaining">0</strong><small>失败可重新发布</small></article><article class="metric-card accent-cyan"><span>待发布回答</span><strong id="auto-ready">0</strong><small>可进入自动队列</small></article></div><div id="auto-answer-job" class="article-job-panel standalone"><div class="job-status-row"><div><span id="auto-job-status" class="badge off">暂无任务</span><strong id="auto-job-percent">0%</strong></div><span id="auto-job-count">0 / 0</span></div><div class="progress-track"><i id="auto-job-bar"></i></div><p id="auto-job-current">选择账号后可执行今日回答队列</p><p id="auto-job-message" class="job-message"></p><div class="job-controls"><button id="auto-job-pause" class="button button-ghost" disabled>暂停</button><button id="auto-job-resume" class="button button-primary" disabled>继续</button><button id="auto-job-stop" class="button button-ghost danger-text" disabled>停止</button></div></div></section>
       </div>
 
       <div id="schedules-page" class="page">
@@ -563,9 +563,9 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.16.1" defer></script>
-  <script src="/assets/prompt-library.js?v=0.16.1" defer></script>
-  <script src="/assets/qa.js?v=0.16.1" defer></script>
-  <script src="/assets/operations.js?v=0.16.1" defer></script>
+  <script src="/assets/app.js?v=0.16.2" defer></script>
+  <script src="/assets/prompt-library.js?v=0.16.2" defer></script>
+  <script src="/assets/qa.js?v=0.16.2" defer></script>
+  <script src="/assets/operations.js?v=0.16.2" defer></script>
 </body>
 </html>

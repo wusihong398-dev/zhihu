@@ -374,14 +374,20 @@ def _account_day_bounds(account: ZhihuAccount) -> tuple[datetime, datetime]:
     return start_local.astimezone(UTC), (start_local + timedelta(days=1)).astimezone(UTC)
 
 
-async def _attempted_today(account: ZhihuAccount, db: AsyncSession) -> int:
+async def _quota_used_today(account: ZhihuAccount, db: AsyncSession) -> int:
+    """Count only answers that Zhihu confirmed as successfully published.
+
+    ``publish_attempted_at`` is retained for diagnostics and display, but a failed
+    attempt must not consume the account's daily answer quota.
+    """
     start, end = _account_day_bounds(account)
     return (
         await db.scalar(
             select(func.count(ZhihuAnswer.id)).where(
                 ZhihuAnswer.account_id == account.id,
-                ZhihuAnswer.publish_attempted_at >= start,
-                ZhihuAnswer.publish_attempted_at < end,
+                ZhihuAnswer.status == AnswerStatus.published,
+                ZhihuAnswer.published_at >= start,
+                ZhihuAnswer.published_at < end,
             )
         )
         or 0
@@ -739,8 +745,8 @@ async def create_answer_publish_job(
     account = await get_account_for_user(account_id, user, db)
     if any(item.status == AnswerStatus.published for item in answers):
         raise HTTPException(status_code=400, detail="所选回答中包含已发布回答")
-    attempted = await _attempted_today(account, db)
-    remaining = max(0, account.daily_answer_limit - attempted)
+    quota_used = await _quota_used_today(account, db)
+    remaining = max(0, account.daily_answer_limit - quota_used)
     if len(answers) > remaining:
         raise HTTPException(
             status_code=400,
@@ -776,26 +782,20 @@ async def auto_answer_summary(
     user: User = Depends(require_active_user),
 ) -> AutoAnswerSummary:
     account = await get_account_for_user(account_id, user, db)
-    attempted = await _attempted_today(account, db)
-    start, end = _account_day_bounds(account)
+    quota_used = await _quota_used_today(account, db)
     ready = await db.scalar(
         select(func.count(ZhihuAnswer.id)).where(
             ZhihuAnswer.account_id == account_id, ZhihuAnswer.status == AnswerStatus.ready
         )
     )
-    published = await db.scalar(
-        select(func.count(ZhihuAnswer.id)).where(
-            ZhihuAnswer.account_id == account_id,
-            ZhihuAnswer.published_at >= start,
-            ZhihuAnswer.published_at < end,
-        )
-    )
     return AutoAnswerSummary(
         daily_limit=account.daily_answer_limit,
-        attempted_today=attempted,
-        remaining_today=max(0, account.daily_answer_limit - attempted),
+        # Kept for API compatibility; this value now means successful
+        # publications that consumed quota, not all attempts.
+        attempted_today=quota_used,
+        remaining_today=max(0, account.daily_answer_limit - quota_used),
         ready_count=ready or 0,
-        published_today=published or 0,
+        published_today=quota_used,
     )
 
 
@@ -806,12 +806,12 @@ async def run_auto_answer(
     user: User = Depends(require_active_user),
 ) -> AutoAnswerRunResponse:
     account = await get_account_for_user(account_id, user, db)
-    attempted = await _attempted_today(account, db)
-    remaining = max(0, account.daily_answer_limit - attempted)
+    quota_used = await _quota_used_today(account, db)
+    remaining = max(0, account.daily_answer_limit - quota_used)
     if remaining == 0:
         return AutoAnswerRunResponse(
             daily_limit=account.daily_answer_limit,
-            attempted_today=attempted,
+            attempted_today=quota_used,
             queued_count=0,
             job=None,
         )
@@ -831,7 +831,7 @@ async def run_auto_answer(
     if not answer_ids:
         return AutoAnswerRunResponse(
             daily_limit=account.daily_answer_limit,
-            attempted_today=attempted,
+            attempted_today=quota_used,
             queued_count=0,
             job=None,
         )
@@ -857,7 +857,7 @@ async def run_auto_answer(
     start_answer_job(job.id)
     return AutoAnswerRunResponse(
         daily_limit=account.daily_answer_limit,
-        attempted_today=attempted,
+        attempted_today=quota_used,
         queued_count=len(answer_ids),
         job=_job_read(job),
     )
