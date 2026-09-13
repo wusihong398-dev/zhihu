@@ -21,7 +21,7 @@
   }
   function setBusy(button, busy, text) { if (!button) return; if (busy) { button.dataset.label = button.textContent; button.textContent = text; button.disabled = true; } else { button.textContent = button.dataset.label || button.textContent; button.disabled = false; } }
   function formatTime(value) { if (!value) return "—"; return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)); }
-  function accountOptions() { return state.accounts.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}</option>`).join(""); }
+  function accountOptions() { return state.accounts.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}${item.status === "online" ? "（已登录）" : ""}${item.enabled ? "" : "（已停用）"}</option>`).join(""); }
 
   async function loadBase() {
     try {
@@ -217,7 +217,7 @@
   async function loadAutoSummary() { const accountId = $("#auto-answer-account").value; $("#auto-answer-run").disabled = !accountId; if (!accountId) return; try { const data = await api(`/accounts/${accountId}/auto-answer/summary`); $("#auto-daily-limit").textContent = data.daily_limit; $("#auto-attempted").textContent = data.attempted_today; $("#auto-remaining").textContent = data.remaining_today; $("#auto-ready").textContent = data.ready_count; $("#auto-answer-run").disabled = !data.remaining_today || !data.ready_count; await loadLatestPublish(accountId); } catch (error) { toast(error.message, "error"); } }
   async function runAutoAnswer() { const accountId = $("#auto-answer-account").value; const account = state.accounts.find((item) => item.id === accountId); if (!account || !confirm(`确定按“${account.display_name}”的今日剩余额度发布待发布回答吗？`)) return; const button = $("#auto-answer-run"); setBusy(button, true, "正在创建队列…"); try { const result = await api(`/accounts/${accountId}/auto-answer/run`, { method: "POST" }); if (!result.job) return toast(result.attempted_today >= result.daily_limit ? "今日回答额度已用完" : "没有待发布回答", "error"); state.publishJob = result.job; renderJob(state.publishJob, "auto-job"); pollJobs(); toast(`已加入 ${result.queued_count} 个回答`); } catch (error) { toast(error.message, "error"); } finally { setBusy(button, false); } }
 
-  async function activate(page) { if (!state.accounts.length) await loadBase(); if (page === "questions") { const id = $("#question-list-account").value; if (id) await loadQuestionAccount(id); } if (page === "answers") { await loadAnswers(true); const id = $("#answer-list-account").value; if (id) await loadLatestPublish(id); } if (page === "auto-answer") await loadAutoSummary(); }
+  async function activate() { await loadBase(); }
   function bind() {
     $("#question-collect-form").addEventListener("submit", collectQuestions);
     $("#question-collect-account").addEventListener("change", (event) => loadQuestionAccount(event.target.value));
