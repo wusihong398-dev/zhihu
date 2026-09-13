@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.core.security import require_active_user
+from app.core.security import require_active_user, require_admin
 from app.main import app
 from app.models.user import UserRole
 
@@ -12,10 +12,23 @@ ADMIN = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
 
 
 def test_account_can_copy_reusable_configuration_without_duplicates() -> None:
-    app.dependency_overrides[require_active_user] = lambda: ADMIN
+    current = {"user": ADMIN}
+    app.dependency_overrides[require_active_user] = lambda: current["user"]
+    app.dependency_overrides[require_admin] = lambda: ADMIN
     try:
         with TestClient(app) as client:
             suffix = uuid.uuid4().hex[:8]
+            user = client.post(
+                "/api/users",
+                json={
+                    "username": f"account_sync_{suffix}",
+                    "password": "test-password-123",
+                },
+            ).json()
+            app.dependency_overrides.pop(require_admin, None)
+            current["user"] = SimpleNamespace(
+                id=uuid.UUID(user["id"]), role=UserRole.user
+            )
             source = client.post(
                 "/api/accounts",
                 json={
@@ -102,3 +115,4 @@ def test_account_can_copy_reusable_configuration_without_duplicates() -> None:
             assert len(client.get(f"/api/schedules?account_id={target_id}").json()) == 1
     finally:
         app.dependency_overrides.pop(require_active_user, None)
+        app.dependency_overrides.pop(require_admin, None)
