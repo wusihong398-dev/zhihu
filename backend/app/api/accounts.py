@@ -16,6 +16,7 @@ from app.schemas.account import (
     AccountCreate,
     AccountRead,
     AccountUpdate,
+    ZhihuBrowserAction,
     ZhihuLoginSessionRead,
 )
 from app.services.access_control import get_account_for_user
@@ -29,8 +30,10 @@ from app.services.zhihu_login import (
     cancel_login_session,
     close_account_login_sessions,
     get_login_session,
+    perform_website_action,
     poll_login_session,
     start_login_session,
+    start_website_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,8 +150,10 @@ def _login_session_response(session) -> ZhihuLoginSessionRead:
     return ZhihuLoginSessionRead(
         session_id=session.id,
         account_id=session.account_id,
+        mode=session.mode,
         status=session.status,
         message=session.message,
+        page_url=session.page_url,
         screenshot_version=session.screenshot_version,
         created_at=session.created_at,
         expires_at=session.expires_at,
@@ -174,6 +179,27 @@ async def create_login_session(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     account.status = session.status
     await db.commit()
+    return _login_session_response(session)
+
+
+@router.post(
+    "/{account_id}/website-session",
+    response_model=ZhihuLoginSessionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_website_session(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ZhihuLoginSessionRead:
+    account = await get_account_for_user(account_id, user, db)
+    try:
+        session = await start_website_session(account)
+    except ZhihuLoginError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if account.status != session.status:
+        account.status = session.status
+        await db.commit()
     return _login_session_response(session)
 
 
@@ -217,6 +243,37 @@ async def read_login_screenshot(
         media_type="image/png",
         headers={"Cache-Control": "no-store, private"},
     )
+
+
+@router.post(
+    "/{account_id}/login-session/{session_id}/browser-action",
+    response_model=ZhihuLoginSessionRead,
+)
+async def website_browser_action(
+    account_id: uuid.UUID,
+    session_id: uuid.UUID,
+    payload: ZhihuBrowserAction,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> ZhihuLoginSessionRead:
+    account = await get_account_for_user(account_id, user, db)
+    try:
+        session = await perform_website_action(
+            account.id,
+            session_id,
+            action=payload.action,
+            x=payload.x,
+            y=payload.y,
+            text=payload.text,
+            key=payload.key,
+            delta_y=payload.delta_y,
+        )
+    except ZhihuLoginError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if account.status != session.status:
+        account.status = session.status
+        await db.commit()
+    return _login_session_response(session)
 
 
 @router.delete(

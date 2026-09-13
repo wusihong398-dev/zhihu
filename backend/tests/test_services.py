@@ -123,6 +123,106 @@ def test_zhihu_login_requires_real_auth_cookie() -> None:
     assert not has_zhihu_auth_cookie([{"name": "z_c0", "value": ""}])
 
 
+def test_website_action_is_scoped_to_one_account_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app.models.account import AccountStatus
+    from app.services import zhihu_login
+
+    events: list[tuple[str, float, float]] = []
+
+    class FakeMouse:
+        async def click(self, x: float, y: float) -> None:
+            events.append(("click", x, y))
+
+    class FakeKeyboard:
+        async def insert_text(self, _: str) -> None:
+            return None
+
+        async def press(self, _: str) -> None:
+            return None
+
+    class FakeContext:
+        async def cookies(self):
+            return [{"name": "z_c0", "value": "account-one-cookie"}]
+
+    class FakePage:
+        url = "https://www.zhihu.com/"
+        mouse = FakeMouse()
+        keyboard = FakeKeyboard()
+
+        async def wait_for_timeout(self, _: int) -> None:
+            return None
+
+    async def fake_timeout() -> int:
+        return 30_000
+
+    async def fake_capture(session) -> None:
+        session.page_url = session.page.url
+        session.screenshot_version += 1
+
+    first_account_id = uuid.uuid4()
+    second_account_id = uuid.uuid4()
+    first_session_id = uuid.uuid4()
+    second_session_id = uuid.uuid4()
+    first_session = zhihu_login.ZhihuLoginSession(
+        id=first_session_id,
+        account_id=first_account_id,
+        mode="website",
+        status=AccountStatus.online,
+        message="",
+        screenshot_path=tmp_path / "first.png",
+        created_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + zhihu_login.WEBSITE_SESSION_TTL,
+        context=FakeContext(),
+        page=FakePage(),
+    )
+    second_session = zhihu_login.ZhihuLoginSession(
+        id=second_session_id,
+        account_id=second_account_id,
+        mode="website",
+        status=AccountStatus.online,
+        message="",
+        screenshot_path=tmp_path / "second.png",
+        created_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + zhihu_login.WEBSITE_SESSION_TTL,
+        context=FakeContext(),
+        page=FakePage(),
+    )
+    monkeypatch.setattr(zhihu_login, "browser_timeout_ms", fake_timeout)
+    monkeypatch.setattr(zhihu_login, "_capture", fake_capture)
+    zhihu_login._sessions[first_session_id] = first_session
+    zhihu_login._sessions[second_session_id] = second_session
+
+    async def verify() -> None:
+        result = await zhihu_login.perform_website_action(
+            first_account_id,
+            first_session_id,
+            action="click",
+            x=320,
+            y=240,
+        )
+        assert result.account_id == first_account_id
+        assert result.status == AccountStatus.online
+        assert result.screenshot_version == 1
+        assert events == [("click", 320, 240)]
+        assert second_session.screenshot_version == 0
+        with pytest.raises(zhihu_login.ZhihuLoginError):
+            await zhihu_login.perform_website_action(
+                second_account_id,
+                first_session_id,
+                action="click",
+                x=10,
+                y=10,
+            )
+
+    try:
+        asyncio.run(verify())
+    finally:
+        zhihu_login._sessions.pop(first_session_id, None)
+        zhihu_login._sessions.pop(second_session_id, None)
+
+
 def test_zhihu_article_sync_payload_builds_public_url_and_time() -> None:
     item = _published_article_from_payload(
         {"id": 2082171778986664628, "title": "已经发布的文章", "created": 1789246500}

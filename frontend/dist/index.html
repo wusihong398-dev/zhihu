@@ -7,11 +7,11 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.14.1">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.14.1">
-  <link rel="stylesheet" href="/assets/login.css?v=0.14.1">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.14.1">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.14.1">
+  <link rel="stylesheet" href="/assets/app.css?v=0.15.0">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.15.0">
+  <link rel="stylesheet" href="/assets/login.css?v=0.15.0">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.15.0">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.15.0">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -448,11 +448,16 @@
     <section class="dialog zhihu-login-dialog" role="dialog" aria-modal="true" aria-labelledby="zhihu-login-title">
       <div class="dialog-head"><div><span class="eyebrow">账号独立登录会话</span><h2 id="zhihu-login-title">登录知乎</h2></div><button id="zhihu-login-close" class="icon-button" aria-label="关闭">×</button></div>
       <div class="zhihu-login-status"><span id="zhihu-login-state" class="badge pending">正在连接</span><p id="zhihu-login-message">正在打开知乎官方登录页…</p></div>
+      <div id="zhihu-browser-controls" class="zhihu-browser-controls" hidden>
+        <div class="zhihu-browser-nav"><button class="button button-ghost" type="button" data-browser-action="back">← 后退</button><button class="button button-ghost" type="button" data-browser-action="forward">前进 →</button><button class="button button-ghost" type="button" data-browser-action="home">官网首页</button><button class="button button-ghost" type="button" data-browser-action="reload">刷新官网</button></div>
+        <div id="zhihu-browser-url" class="zhihu-browser-url">正在打开知乎官网</div>
+        <div class="zhihu-browser-input"><input id="zhihu-browser-text" maxlength="2000" placeholder="先点击官网中的输入框，再在这里输入文字"><button id="zhihu-browser-send" class="button button-primary" type="button">发送文字</button><button class="button button-ghost" type="button" data-browser-key="Enter">回车</button><button class="button button-ghost" type="button" data-browser-key="Tab">Tab</button><button class="button button-ghost" type="button" data-browser-scroll="-650">向上滚动</button><button class="button button-ghost" type="button" data-browser-scroll="650">向下滚动</button></div>
+      </div>
       <div class="zhihu-login-screen">
         <div id="zhihu-login-loading" class="login-screen-loading">正在获取登录二维码…</div>
         <img id="zhihu-login-screenshot" alt="知乎官方登录二维码页面" hidden>
       </div>
-      <p class="field-help">请使用知乎手机 App 扫码。二维码和登录状态仅属于当前账号；系统不会向网页返回 Cookie。若知乎要求安全验证，请按官方提示人工完成。</p>
+      <p id="zhihu-login-help" class="field-help">请使用知乎手机 App 扫码。二维码和登录状态仅属于当前账号；系统不会向网页返回 Cookie。若知乎要求安全验证，请按官方提示人工完成。</p>
       <div class="dialog-actions"><button id="zhihu-login-open" class="button button-ghost" type="button">查看原图</button><button id="zhihu-login-refresh" class="button button-ghost" type="button">刷新状态</button><button id="zhihu-login-done" class="button button-primary" type="button">完成</button></div>
     </section>
   </div>
@@ -523,8 +528,8 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.14.1" defer></script>
-  <script src="/assets/qa.js?v=0.14.1" defer></script>
-  <script src="/assets/operations.js?v=0.14.1" defer></script>
+  <script src="/assets/app.js?v=0.15.0" defer></script>
+  <script src="/assets/qa.js?v=0.15.0" defer></script>
+  <script src="/assets/operations.js?v=0.15.0" defer></script>
 </body>
 </html>

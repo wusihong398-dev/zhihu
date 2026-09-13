@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,8 +52,21 @@ class AccountRead(BaseModel):
 class ZhihuLoginSessionRead(BaseModel):
     session_id: uuid.UUID
     account_id: uuid.UUID
+    mode: Literal["login", "website"]
     status: AccountStatus
     message: str
+    page_url: str
     screenshot_version: int
     created_at: datetime
     expires_at: datetime
+
+
+class ZhihuBrowserAction(BaseModel):
+    action: Literal[
+        "click", "type", "key", "scroll", "home", "back", "forward", "reload"
+    ]
+    x: float | None = Field(default=None, ge=0, le=5000)
+    y: float | None = Field(default=None, ge=0, le=10000)
+    text: str | None = Field(default=None, max_length=2000)
+    key: str | None = Field(default=None, max_length=40)
+    delta_y: int | None = Field(default=None, ge=-5000, le=5000)

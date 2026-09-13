@@ -85,6 +85,13 @@ def test_managed_users_have_isolated_account_data_and_expiration() -> None:
                 ).status_code
                 == 404
             )
+            assert (
+                client.post(
+                    f"/api/accounts/{first_account_id}/website-session",
+                    headers=second_headers,
+                ).status_code
+                == 404
+            )
 
             product = client.post(
                 f"/api/accounts/{first_account_id}/products",

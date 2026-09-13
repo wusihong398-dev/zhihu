@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, mediaUploadRunning: false, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, mediaUploadRunning: false, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuBrowserBusy: false, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -127,7 +127,7 @@
       <label class="inline-field"><input class="answer-input" aria-label="${escapeHtml(account.display_name)}每日回答数量" type="number" min="0" max="200" value="${account.daily_answer_limit}"><span>个/天</span></label>
       <span class="badge login-status ${statusClass}">${statusLabel}</span>
       <label class="switch" title="启用或停用账号"><input class="enabled-input" type="checkbox" ${account.enabled ? "checked" : ""} aria-label="启用${escapeHtml(account.display_name)}"><i></i></label>
-      <div class="row-actions"><button class="button button-primary login-account" type="button">${account.status === "online" ? "重新登录" : "登录知乎"}</button><button class="button button-ghost save-account" type="button">保存设置</button><button class="button button-ghost edit-account" type="button">编辑</button><button class="button button-ghost danger-text delete-account" type="button">删除</button></div>
+      <div class="row-actions"><button class="button ${account.status === "online" ? "button-ghost" : "button-primary"} login-account" type="button">${account.status === "online" ? "重新登录" : "扫码登录"}</button><button class="button ${account.status === "online" ? "button-primary" : "button-ghost"} open-website-account" type="button">登录官网</button><button class="button button-ghost save-account" type="button">保存设置</button><button class="button button-ghost edit-account" type="button">编辑</button><button class="button button-ghost danger-text delete-account" type="button">删除</button></div>
     </div>`;
   }
 
@@ -136,10 +136,11 @@
     const filtered = state.accounts.filter((account) => `${account.display_name} ${account.remark}`.toLowerCase().includes(query));
     $("#account-count").textContent = `共 ${state.accounts.length} 个账号`;
     const table = $("#accounts-table");
-    table.innerHTML = filtered.length ? `<div class="account-row header"><span>账号</span><span>每日文章</span><span>每日回答</span><span>知乎登录</span><span>启用</span><span></span></div>${filtered.map(accountRow).join("")}` : "";
+    table.innerHTML = filtered.length ? `<div class="account-row header"><span>账号</span><span>每日文章</span><span>每日回答</span><span>知乎登录</span><span>启用</span><span>账号操作</span></div>${filtered.map(accountRow).join("")}` : "";
     $("#accounts-empty").hidden = state.accounts.length !== 0 || query !== "";
     $$(".save-account", table).forEach((button) => button.addEventListener("click", saveAccount));
     $$(".login-account", table).forEach((button) => button.addEventListener("click", openZhihuLogin));
+    $$(".open-website-account", table).forEach((button) => button.addEventListener("click", openZhihuWebsite));
     $$(".edit-account", table).forEach((button) => button.addEventListener("click", editAccount));
     $$(".delete-account", table).forEach((button) => button.addEventListener("click", deleteAccount));
   }
@@ -185,8 +186,9 @@
 
   function setZhihuLoginMessage(session) {
     const labelMap = { pending_login: "等待扫码", online: "登录成功", offline: "登录已结束", verification_required: "需要人工验证" };
-    $("#zhihu-login-state").textContent = labelMap[session.status] || "正在连接";
+    $("#zhihu-login-state").textContent = session.mode === "website" && session.status === "online" ? "官网已登录" : labelMap[session.status] || "正在连接";
     $("#zhihu-login-message").textContent = session.message || "请稍候";
+    $("#zhihu-browser-url").textContent = session.page_url || "正在打开知乎官网";
     $("#zhihu-login-state").className = `badge login-status ${session.status === "online" ? "" : session.status === "verification_required" ? "warning" : session.status === "offline" ? "danger" : "pending"}`;
   }
 
@@ -218,7 +220,7 @@
       await refreshZhihuLoginScreenshot();
       if (session.status === "online") {
         await loadAccounts(true);
-        toast("知乎账号登录成功，独立登录状态已保存");
+        toast(session.mode === "website" ? "当前账号的知乎官网已打开" : "知乎账号登录成功，独立登录状态已保存");
         return;
       }
       if (session.status === "offline") return;
@@ -238,21 +240,94 @@
     setBusy(button, true, "打开登录页…");
     try {
       const session = await api(`/accounts/${accountId}/login-session`, { method: "POST" });
-      state.zhihuLogin = session;
-      state.zhihuScreenshotVersion = -1;
-      $("#zhihu-login-title").textContent = `登录知乎 · ${account?.display_name || "账号"}`;
-      $("#zhihu-login-screenshot").hidden = true;
-      $("#zhihu-login-loading").hidden = false;
-      $("#zhihu-login-dialog").hidden = false;
-      setZhihuLoginMessage(session);
-      await refreshZhihuLoginScreenshot(true);
-      if (session.status !== "online" && session.status !== "offline") scheduleZhihuLoginPoll();
-      else if (session.status === "online") await loadAccounts(true);
+      await showZhihuBrowserSession(session, account, "login");
     } catch (error) {
       toast(error.message, "error");
     } finally {
       setBusy(button, false);
     }
+  }
+
+  async function openZhihuWebsite(event) {
+    const button = event.currentTarget;
+    const row = button.closest(".account-row");
+    const accountId = row.dataset.accountId;
+    const account = state.accounts.find((item) => item.id === accountId);
+    setBusy(button, true, "打开官网…");
+    try {
+      const session = await api(`/accounts/${accountId}/website-session`, { method: "POST" });
+      await showZhihuBrowserSession(session, account, "website");
+      if (session.status === "online") await loadAccounts(true);
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function showZhihuBrowserSession(session, account, mode) {
+    state.zhihuLogin = session;
+    state.zhihuScreenshotVersion = -1;
+    $("#zhihu-login-dialog").dataset.mode = mode;
+    $("#zhihu-login-title").textContent = `${mode === "website" ? "知乎官网" : "登录知乎"} · ${account?.display_name || "账号"}`;
+    $("#zhihu-browser-controls").hidden = mode !== "website";
+    $("#zhihu-login-help").textContent = mode === "website"
+      ? "这是当前账号在服务器中的独立知乎官网。直接点击网页画面操作；先点输入位置，再在下方输入文字并发送。关闭窗口不会退出知乎账号。"
+      : "请使用知乎手机 App 扫码。二维码和登录状态仅属于当前账号；系统不会向网页返回 Cookie。若知乎要求安全验证，请按官方提示人工完成。";
+    $("#zhihu-login-screenshot").classList.toggle("interactive", mode === "website");
+    $("#zhihu-login-screenshot").hidden = true;
+    $("#zhihu-login-loading").hidden = false;
+    $("#zhihu-login-dialog").hidden = false;
+    setZhihuLoginMessage(session);
+    await refreshZhihuLoginScreenshot(true);
+    if (session.status !== "online" && session.status !== "offline") scheduleZhihuLoginPoll();
+    else if (session.status === "online") await loadAccounts(true);
+  }
+
+  async function sendZhihuBrowserAction(payload, button = null) {
+    const session = state.zhihuLogin;
+    if (!session || session.mode !== "website" || state.zhihuBrowserBusy) return;
+    state.zhihuBrowserBusy = true;
+    $("#zhihu-login-screenshot").classList.add("busy");
+    if (button) setBusy(button, true, "处理中…");
+    try {
+      const updated = await api(`/accounts/${session.account_id}/login-session/${session.session_id}/browser-action`, { method: "POST", body: JSON.stringify(payload) });
+      if (!state.zhihuLogin || state.zhihuLogin.session_id !== updated.session_id) return;
+      state.zhihuLogin = updated;
+      setZhihuLoginMessage(updated);
+      await refreshZhihuLoginScreenshot(true);
+      await loadAccounts(true);
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      state.zhihuBrowserBusy = false;
+      $("#zhihu-login-screenshot").classList.remove("busy");
+      if (button) setBusy(button, false);
+    }
+  }
+
+  function clickZhihuWebsite(event) {
+    const session = state.zhihuLogin;
+    const image = event.currentTarget;
+    if (!session || session.mode !== "website" || !image.naturalWidth || state.zhihuBrowserBusy) return;
+    const bounds = image.getBoundingClientRect();
+    const scale = Math.min(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight);
+    const renderedWidth = image.naturalWidth * scale;
+    const renderedHeight = image.naturalHeight * scale;
+    const left = bounds.left + (bounds.width - renderedWidth) / 2;
+    const top = bounds.top + (bounds.height - renderedHeight) / 2;
+    const x = (event.clientX - left) / scale;
+    const y = (event.clientY - top) / scale;
+    if (x < 0 || y < 0 || x > image.naturalWidth || y > image.naturalHeight) return;
+    sendZhihuBrowserAction({ action: "click", x, y });
+  }
+
+  function sendZhihuBrowserText() {
+    const input = $("#zhihu-browser-text");
+    if (!input.value) return toast("请先输入文字", "error");
+    const text = input.value;
+    input.value = "";
+    sendZhihuBrowserAction({ action: "type", text }, $("#zhihu-browser-send"));
   }
 
   function closeZhihuLoginDialog() {
@@ -262,10 +337,12 @@
       api(`/accounts/${session.account_id}/login-session/${session.session_id}`, { method: "DELETE" }).catch(() => {});
     }
     state.zhihuLogin = null;
+    state.zhihuBrowserBusy = false;
     state.zhihuScreenshotVersion = -1;
     if (state.zhihuScreenshotUrl) URL.revokeObjectURL(state.zhihuScreenshotUrl);
     state.zhihuScreenshotUrl = "";
     $("#zhihu-login-screenshot").removeAttribute("src");
+    $("#zhihu-login-screenshot").classList.remove("interactive", "busy");
     $("#zhihu-login-dialog").hidden = true;
   }
 
@@ -1969,6 +2046,12 @@
     $("#zhihu-login-done").addEventListener("click", closeZhihuLoginDialog);
     $("#zhihu-login-open").addEventListener("click", openZhihuLoginScreenshot);
     $("#zhihu-login-refresh").addEventListener("click", pollZhihuLogin);
+    $("#zhihu-login-screenshot").addEventListener("click", clickZhihuWebsite);
+    $("#zhihu-browser-send").addEventListener("click", sendZhihuBrowserText);
+    $("#zhihu-browser-text").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); sendZhihuBrowserText(); } });
+    $$("[data-browser-action]").forEach((button) => button.addEventListener("click", () => sendZhihuBrowserAction({ action: button.dataset.browserAction }, button)));
+    $$("[data-browser-key]").forEach((button) => button.addEventListener("click", () => sendZhihuBrowserAction({ action: "key", key: button.dataset.browserKey }, button)));
+    $$("[data-browser-scroll]").forEach((button) => button.addEventListener("click", () => sendZhihuBrowserAction({ action: "scroll", delta_y: Number(button.dataset.browserScroll) }, button)));
     $("#zhihu-login-dialog").addEventListener("click", (event) => { if (event.target.id === "zhihu-login-dialog") closeZhihuLoginDialog(); });
     $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
     $$('[data-open-account]').forEach((button) => button.addEventListener("click", openAccountDialog));
