@@ -16,6 +16,7 @@ class AccountCreate(BaseModel):
     auto_restore_keywords: bool = False
     keyword_restore_threshold: int = Field(default=20, ge=1, le=500)
     timezone: str | None = Field(default=None, max_length=64)
+    sync_config_from_account_id: uuid.UUID | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -28,6 +29,7 @@ class AccountUpdate(BaseModel):
     keyword_restore_threshold: int | None = Field(default=None, ge=1, le=500)
     timezone: str | None = Field(default=None, max_length=64)
     enabled: bool | None = None
+    sync_config_from_account_id: uuid.UUID | None = None
 
 
 class AccountRead(BaseModel):

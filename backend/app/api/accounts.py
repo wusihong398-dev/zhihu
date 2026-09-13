@@ -20,6 +20,7 @@ from app.schemas.account import (
     ZhihuLoginSessionRead,
 )
 from app.services.access_control import get_account_for_user
+from app.services.account_config_sync import sync_account_configuration
 from app.services.account_storage import delete_account_storage, initialize_account_storage
 from app.services.browser_lock import (
     get_account_browser_lock,
@@ -55,6 +56,27 @@ def _validate_timezone(value: str | None) -> str:
     return value
 
 
+async def _sync_requested_configuration(
+    account: ZhihuAccount,
+    source_account_id: uuid.UUID | None,
+    user: User,
+    db: AsyncSession,
+) -> None:
+    if source_account_id is None:
+        return
+    if source_account_id == account.id:
+        raise HTTPException(status_code=400, detail="不能从当前账号同步配置")
+    source = await get_account_for_user(source_account_id, user, db)
+    if source.owner_user_id != account.owner_user_id:
+        raise HTTPException(status_code=403, detail="只能同步同一系统用户下的知乎账号配置")
+    await sync_account_configuration(
+        source,
+        account,
+        account.owner_user_id or user.id,
+        db,
+    )
+
+
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: AccountCreate,
@@ -63,6 +85,7 @@ async def create_account(
 ) -> ZhihuAccount:
     owner_user_id = None if user.role == UserRole.admin else user.id
     data = payload.model_dump()
+    source_account_id = data.pop("sync_config_from_account_id")
     if not data["timezone"]:
         system_setting = await db.get(SystemSetting, 1)
         data["timezone"] = (
@@ -73,6 +96,7 @@ async def create_account(
     db.add(account)
     await db.flush()
     try:
+        await _sync_requested_configuration(account, source_account_id, user, db)
         initialize_account_storage(account.id, account.profile_key)
         await db.commit()
     except Exception:
@@ -112,10 +136,12 @@ async def update_account(
 ) -> ZhihuAccount:
     account = await get_account_for_user(account_id, user, db)
     data = payload.model_dump(exclude_unset=True)
+    source_account_id = data.pop("sync_config_from_account_id", None)
     if "timezone" in data:
         data["timezone"] = _validate_timezone(data["timezone"])
     for field, value in data.items():
         setattr(account, field, value)
+    await _sync_requested_configuration(account, source_account_id, user, db)
     await db.commit()
     await db.refresh(account)
     return account

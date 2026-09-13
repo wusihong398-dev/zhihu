@@ -365,12 +365,24 @@
     $("#article-limit").value = editing?.daily_article_limit ?? 3;
     $("#answer-limit").value = editing?.daily_answer_limit ?? 5;
     $("#account-timezone").value = editing?.timezone || "Asia/Shanghai";
+    const targetOwnerId = editing?.owner_user_id ?? (state.user?.role === "admin" ? null : state.user?.id);
+    const syncCandidates = state.accounts.filter((item) => item.id !== editing?.id && item.owner_user_id === targetOwnerId);
+    $("#account-sync-source").innerHTML = `<option value="">请选择来源账号</option>${syncCandidates.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}</option>`).join("")}`;
+    $("#account-sync-config").checked = false;
+    $("#account-sync-config").disabled = syncCandidates.length === 0;
+    $("#account-sync-options").hidden = true;
     $("#account-error").textContent = "";
     $("#account-dialog").hidden = false;
     window.setTimeout(() => $("#display-name").focus(), 0);
   }
 
   function closeAccountDialog() { $("#account-dialog").hidden = true; state.editingAccountId = null; }
+
+  function toggleAccountConfigSync() {
+    const enabled = $("#account-sync-config").checked;
+    $("#account-sync-options").hidden = !enabled;
+    $("#account-sync-source").required = enabled;
+  }
 
   function editAccount(event) {
     const accountId = event.currentTarget.closest(".account-row").dataset.accountId;
@@ -403,6 +415,13 @@
       daily_answer_limit: Number($("#answer-limit").value),
       timezone: $("#account-timezone").value.trim() || "Asia/Shanghai"
     };
+    const syncConfig = $("#account-sync-config").checked;
+    const syncSource = $("#account-sync-source").value;
+    if (syncConfig && !syncSource) {
+      $("#account-error").textContent = "请选择要同步配置的来源账号";
+      return;
+    }
+    if (syncConfig) payload.sync_config_from_account_id = syncSource;
     setBusy(submit, true, "保存中…");
     $("#account-error").textContent = "";
     try {
@@ -410,7 +429,7 @@
       await api(editing ? `/accounts/${state.editingAccountId}` : "/accounts", { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) });
       closeAccountDialog();
       await loadAccounts(true);
-      toast(editing ? "知乎账号已修改，登录状态保持不变" : "知乎账号已添加");
+      toast(syncConfig ? "账号已保存，并已同步全部运营配置" : editing ? "知乎账号已修改，登录状态保持不变" : "知乎账号已添加");
     } catch (error) {
       $("#account-error").textContent = error.message;
     } finally {
@@ -1940,6 +1959,7 @@
     $("#logout-button").addEventListener("click", () => logout());
     $("#refresh-button").addEventListener("click", refreshCurrentPage);
     $("#account-form").addEventListener("submit", createAccount);
+    $("#account-sync-config").addEventListener("change", toggleAccountConfigSync);
     $("#account-search").addEventListener("input", renderAccounts);
     $("#user-search").addEventListener("input", renderUsers);
     $("#user-add").addEventListener("click", () => openUserDialog());
