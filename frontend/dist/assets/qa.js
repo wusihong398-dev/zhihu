@@ -3,7 +3,7 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const state = {
-    accounts: [], providers: [], products: [],
+    accounts: [], providers: [], products: [], answerPromptTemplates: [],
     questions: { items: [], total: 0 }, questionPage: 1, selectedQuestions: new Set(),
     answers: { items: [], total: 0 }, answerPage: 1, answerStatus: "draft", selectedAnswers: new Set(),
     editingAnswer: null, generationJob: null, publishJob: null, pollTimer: null,
@@ -25,9 +25,11 @@
 
   async function loadBase() {
     try {
-      const [accounts, providers] = await Promise.all([api("/accounts"), api("/ai/providers")]);
+      const [accounts, providers, promptTemplates] = await Promise.all([api("/accounts"), api("/ai/providers"), api("/answer-prompt-templates")]);
       state.accounts = accounts;
       state.providers = providers.filter((item) => item.enabled && item.has_api_key);
+      state.answerPromptTemplates = promptTemplates.items;
+      renderAnswerPromptTemplates();
       const options = `<option value="">请选择知乎账号</option>${accountOptions()}`;
       ["#question-collect-account", "#question-list-account", "#answer-list-account", "#auto-answer-account"].forEach((id) => { const select = $(id); const old = select.value; select.innerHTML = options; if (accounts.some((item) => item.id === old)) select.value = old; else if (accounts.length === 1) select.value = accounts[0].id; });
       const provider = $("#answer-generate-provider"); provider.innerHTML = state.providers.length ? state.providers.map((item) => `<option value="${item.provider}" data-model="${escapeHtml(item.model)}">${escapeHtml(item.display_name)} · ${escapeHtml(item.model)}</option>`).join("") : `<option value="">请先在AI配置启用平台</option>`;
@@ -38,6 +40,81 @@
       const autoAccount = $("#auto-answer-account").value;
       if (autoAccount) await loadAutoSummary();
     } catch (error) { if (!/401|登录/.test(error.message)) toast(error.message, "error"); }
+  }
+
+  function renderAnswerPromptTemplates(selectedId = "") {
+    const select = $("#answer-prompt-template-select");
+    const activeId = selectedId || select.value;
+    select.innerHTML = `<option value="">当前未使用已保存模板</option>${state.answerPromptTemplates.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
+    if (state.answerPromptTemplates.some((item) => item.id === activeId)) select.value = activeId;
+    const hasTemplate = Boolean(select.value);
+    $("#answer-prompt-template-update").disabled = !hasTemplate;
+    $("#answer-prompt-template-rename").disabled = !hasTemplate;
+    $("#answer-prompt-template-delete").disabled = !hasTemplate;
+    if (!hasTemplate) $("#answer-prompt-template-update").textContent = "保存当前模板";
+  }
+
+  function selectAnswerPromptTemplate() {
+    const template = state.answerPromptTemplates.find((item) => item.id === $("#answer-prompt-template-select").value);
+    if (template) $("#answer-prompt").value = template.prompt;
+    renderAnswerPromptTemplates(template?.id || "");
+    $("#answer-prompt-template-update").textContent = "保存当前模板";
+  }
+
+  async function createAnswerPromptTemplate() {
+    const promptText = $("#answer-prompt").value.trim();
+    if (!promptText) return toast("回答提示词不能为空", "error");
+    const name = window.prompt("请输入新模板名称");
+    if (!name?.trim()) return;
+    const button = $("#answer-prompt-template-create"); setBusy(button, true, "创建中…");
+    try {
+      const template = await api("/answer-prompt-templates", { method: "POST", body: JSON.stringify({ name: name.trim(), prompt: promptText }) });
+      const result = await api("/answer-prompt-templates"); state.answerPromptTemplates = result.items;
+      renderAnswerPromptTemplates(template.id); toast("回答提示词模板已创建");
+    } catch (error) { toast(error.message, "error"); }
+    finally { setBusy(button, false); }
+  }
+
+  async function updateAnswerPromptTemplate() {
+    const id = $("#answer-prompt-template-select").value;
+    const promptText = $("#answer-prompt").value.trim();
+    if (!id) return toast("请先选择需要保存的模板", "error");
+    if (!promptText) return toast("回答提示词不能为空", "error");
+    const button = $("#answer-prompt-template-update"); let saved = false; setBusy(button, true, "保存中…");
+    try {
+      await api(`/answer-prompt-templates/${id}`, { method: "PATCH", body: JSON.stringify({ prompt: promptText }) });
+      const result = await api("/answer-prompt-templates"); state.answerPromptTemplates = result.items;
+      renderAnswerPromptTemplates(id); saved = true; toast("当前回答提示词模板已保存");
+    } catch (error) { toast(error.message, "error"); }
+    finally { setBusy(button, false); if (saved) button.textContent = "保存当前模板"; button.disabled = !$("#answer-prompt-template-select").value; }
+  }
+
+  async function renameAnswerPromptTemplate() {
+    const id = $("#answer-prompt-template-select").value;
+    const template = state.answerPromptTemplates.find((item) => item.id === id);
+    if (!template) return;
+    const name = window.prompt("请输入新的模板名称", template.name);
+    if (!name?.trim() || name.trim() === template.name) return;
+    try {
+      await api(`/answer-prompt-templates/${id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      const result = await api("/answer-prompt-templates"); state.answerPromptTemplates = result.items;
+      renderAnswerPromptTemplates(id); toast("回答提示词模板已改名");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  async function deleteAnswerPromptTemplate() {
+    const id = $("#answer-prompt-template-select").value;
+    const template = state.answerPromptTemplates.find((item) => item.id === id);
+    if (!template || !confirm(`确定删除回答提示词模板“${template.name}”吗？`)) return;
+    try {
+      await api(`/answer-prompt-templates/${id}`, { method: "DELETE" });
+      const result = await api("/answer-prompt-templates"); state.answerPromptTemplates = result.items;
+      renderAnswerPromptTemplates(); toast("回答提示词模板已删除");
+    } catch (error) { toast(error.message, "error"); }
+  }
+
+  function markAnswerPromptDirty() {
+    if ($("#answer-prompt-template-select").value) $("#answer-prompt-template-update").textContent = "保存当前模板（有修改）";
   }
 
   async function loadQuestionAccount(accountId) {
@@ -148,6 +225,12 @@
     $("#question-search").addEventListener("input", () => { clearTimeout(state.questionSearchTimer); state.questionSearchTimer = setTimeout(() => { state.questionPage = 1; loadQuestions(true); }, 300); });
     $("#question-select-all").addEventListener("change", (event) => { state.questions.items.forEach((item) => event.target.checked ? state.selectedQuestions.add(item.id) : state.selectedQuestions.delete(item.id)); renderQuestions(); });
     $("#question-delete-selected").addEventListener("click", deleteSelectedQuestions); $("#answer-generate-submit").addEventListener("click", generateAnswers);
+    $("#answer-prompt-template-select").addEventListener("change", selectAnswerPromptTemplate);
+    $("#answer-prompt-template-create").addEventListener("click", createAnswerPromptTemplate);
+    $("#answer-prompt-template-update").addEventListener("click", updateAnswerPromptTemplate);
+    $("#answer-prompt-template-rename").addEventListener("click", renameAnswerPromptTemplate);
+    $("#answer-prompt-template-delete").addEventListener("click", deleteAnswerPromptTemplate);
+    $("#answer-prompt").addEventListener("input", markAnswerPromptDirty);
     $("#question-prev").addEventListener("click", () => { state.questionPage--; loadQuestions(true); }); $("#question-next").addEventListener("click", () => { state.questionPage++; loadQuestions(true); });
     $("#answer-list-account").addEventListener("change", async () => { state.answerPage = 1; state.selectedAnswers.clear(); await loadAnswers(true); await loadLatestPublish($("#answer-list-account").value); });
     $("#answer-search").addEventListener("input", () => { clearTimeout(state.answerSearchTimer); state.answerSearchTimer = setTimeout(() => { state.answerPage = 1; loadAnswers(true); }, 300); });

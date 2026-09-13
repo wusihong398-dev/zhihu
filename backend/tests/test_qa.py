@@ -134,3 +134,70 @@ def test_regular_user_cannot_read_another_users_question_library() -> None:
             assert client.get(f"/api/accounts/{account['id']}/questions").status_code == 404
     finally:
         app.dependency_overrides.pop(require_active_user, None)
+
+
+def test_answer_prompt_template_crud_and_user_isolation() -> None:
+    current = {"user": ADMIN}
+    app.dependency_overrides[require_active_user] = lambda: current["user"]
+    try:
+        with TestClient(app) as client:
+            first = client.post(
+                "/api/users",
+                json={
+                    "username": f"prompt_first_{uuid.uuid4().hex[:8]}",
+                    "password": "test-password-123",
+                },
+            ).json()
+            second = client.post(
+                "/api/users",
+                json={
+                    "username": f"prompt_second_{uuid.uuid4().hex[:8]}",
+                    "password": "test-password-456",
+                },
+            ).json()
+            first_id = uuid.UUID(first["id"])
+            second_id = uuid.UUID(second["id"])
+            current["user"] = SimpleNamespace(id=first_id, role=UserRole.user)
+
+            assert (
+                client.post(
+                    "/api/answer-prompt-templates",
+                    json={"name": "空提示词", "prompt": "   "},
+                ).status_code
+                == 422
+            )
+
+            created = client.post(
+                "/api/answer-prompt-templates",
+                json={"name": "专业回答", "prompt": "先解决问题，再自然介绍商品。"},
+            )
+            assert created.status_code == 201
+            template_id = created.json()["id"]
+            assert client.get("/api/answer-prompt-templates").json()["total"] == 1
+
+            updated = client.patch(
+                f"/api/answer-prompt-templates/{template_id}",
+                json={"name": "专业回答新版", "prompt": "先给出真实建议，再自然介绍商品。"},
+            )
+            assert updated.status_code == 200
+            assert updated.json()["name"] == "专业回答新版"
+            assert updated.json()["prompt"] == "先给出真实建议，再自然介绍商品。"
+
+            current["user"] = SimpleNamespace(id=second_id, role=UserRole.user)
+            assert client.get("/api/answer-prompt-templates").json()["total"] == 0
+            assert (
+                client.patch(
+                    f"/api/answer-prompt-templates/{template_id}",
+                    json={"prompt": "不应允许跨用户修改"},
+                ).status_code
+                == 404
+            )
+
+            current["user"] = SimpleNamespace(id=first_id, role=UserRole.user)
+            assert (
+                client.delete(f"/api/answer-prompt-templates/{template_id}").status_code
+                == 204
+            )
+            assert client.get("/api/answer-prompt-templates").json()["total"] == 0
+    finally:
+        app.dependency_overrides.pop(require_active_user, None)

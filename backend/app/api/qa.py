@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_active_user
@@ -12,6 +13,7 @@ from app.db.session import get_db
 from app.models.account import AccountStatus, ZhihuAccount
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
+from app.models.answer_prompt import AnswerPromptTemplate
 from app.models.product import PromotedProduct
 from app.models.question import ZhihuQuestion
 from app.models.user import User
@@ -23,6 +25,10 @@ from app.schemas.qa import (
     AnswerGenerateRequest,
     AnswerJobRead,
     AnswerListResponse,
+    AnswerPromptTemplateCreate,
+    AnswerPromptTemplateListResponse,
+    AnswerPromptTemplateRead,
+    AnswerPromptTemplateUpdate,
     AnswerPublishJobCreate,
     AnswerRead,
     AnswerUpdate,
@@ -46,6 +52,118 @@ from app.services.zhihu_question_collector import (
 
 
 router = APIRouter(tags=["qa operations"], dependencies=[Depends(require_active_user)])
+
+
+def _clean_prompt_template_name(value: str) -> tuple[str, str]:
+    name = " ".join(value.split())
+    if not name:
+        raise HTTPException(status_code=422, detail="模板名称不能为空")
+    return name, name.casefold()
+
+
+def _clean_answer_prompt(value: str) -> str:
+    prompt = value.strip()
+    if not prompt:
+        raise HTTPException(status_code=422, detail="回答提示词不能为空")
+    return prompt
+
+
+async def _answer_prompt_template_for_user(
+    template_id: uuid.UUID, user: User, db: AsyncSession
+) -> AnswerPromptTemplate:
+    template = await db.get(AnswerPromptTemplate, template_id)
+    if template is None or template.user_id != user.id:
+        raise HTTPException(status_code=404, detail="回答提示词模板不存在")
+    return template
+
+
+@router.get(
+    "/answer-prompt-templates", response_model=AnswerPromptTemplateListResponse
+)
+async def list_answer_prompt_templates(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> AnswerPromptTemplateListResponse:
+    items = list(
+        (
+            await db.execute(
+                select(AnswerPromptTemplate)
+                .where(AnswerPromptTemplate.user_id == user.id)
+                .order_by(
+                    AnswerPromptTemplate.updated_at.desc(),
+                    AnswerPromptTemplate.name.asc(),
+                )
+            )
+        ).scalars()
+    )
+    return AnswerPromptTemplateListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/answer-prompt-templates",
+    response_model=AnswerPromptTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_answer_prompt_template(
+    payload: AnswerPromptTemplateCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> AnswerPromptTemplate:
+    name, normalized_name = _clean_prompt_template_name(payload.name)
+    template = AnswerPromptTemplate(
+        user_id=user.id,
+        name=name,
+        normalized_name=normalized_name,
+        prompt=_clean_answer_prompt(payload.prompt),
+    )
+    db.add(template)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="同名回答提示词模板已存在") from exc
+    await db.refresh(template)
+    return template
+
+
+@router.patch(
+    "/answer-prompt-templates/{template_id}",
+    response_model=AnswerPromptTemplateRead,
+)
+async def update_answer_prompt_template(
+    template_id: uuid.UUID,
+    payload: AnswerPromptTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> AnswerPromptTemplate:
+    template = await _answer_prompt_template_for_user(template_id, user, db)
+    if payload.name is not None:
+        template.name, template.normalized_name = _clean_prompt_template_name(
+            payload.name
+        )
+    if payload.prompt is not None:
+        template.prompt = _clean_answer_prompt(payload.prompt)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="同名回答提示词模板已存在") from exc
+    await db.refresh(template)
+    return template
+
+
+@router.delete(
+    "/answer-prompt-templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_answer_prompt_template(
+    template_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_active_user),
+) -> None:
+    template = await _answer_prompt_template_for_user(template_id, user, db)
+    await db.delete(template)
+    await db.commit()
 
 
 def _job_read(job: AnswerJob) -> AnswerJobRead:

@@ -80,6 +80,37 @@ class AnswerGenerateRequest(BaseModel):
         return self
 
 
+class AnswerPromptTemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    prompt: str = Field(min_length=1, max_length=20000)
+
+
+class AnswerPromptTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    prompt: str | None = Field(default=None, min_length=1, max_length=20000)
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if self.name is None and self.prompt is None:
+            raise ValueError("至少需要修改模板名称或回答提示词")
+        return self
+
+
+class AnswerPromptTemplateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    prompt: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnswerPromptTemplateListResponse(BaseModel):
+    items: list[AnswerPromptTemplateRead]
+    total: int
+
+
 class AnswerCreate(BaseModel):
     question_id: uuid.UUID
     product_id: uuid.UUID | None = None

@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.15.0"
+        assert version.json()["version"] == "0.15.1"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -77,6 +77,11 @@ def test_qa_pages_are_functional_modules() -> None:
     assert "/questions/collect" in script
     assert "/answer-jobs/generate" in script
     assert "/answer-jobs/publish/start" in script
+    assert 'id="answer-prompt-template-select"' in index
+    assert 'id="answer-prompt-template-create"' in index
+    assert 'id="answer-prompt-template-update"' in index
+    assert "保存当前模板" in index
+    assert "/answer-prompt-templates" in script
 
 
 def test_operations_pages_are_functional_modules() -> None:

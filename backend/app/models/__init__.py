@@ -10,6 +10,7 @@ from app.models.article_job import (
 from app.models.article_prompt import ArticlePromptFolder, ArticlePromptTemplate
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus, AnswerJobType
+from app.models.answer_prompt import AnswerPromptTemplate
 from app.models.keyword import AccountKeyword, KeywordSource
 from app.models.keyword_folder import (
     KeywordFolder,
@@ -44,6 +45,7 @@ __all__ = [
     "AnswerJob",
     "AnswerJobStatus",
     "AnswerJobType",
+    "AnswerPromptTemplate",
     "AnswerStatus",
     "KeywordCollectionJob",
     "KeywordFolder",

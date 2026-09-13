@@ -1,0 +1,35 @@
+.answer-prompt-template-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #203653;
+  border-radius: 10px;
+  background: #091629;
+}
+
+.answer-prompt-template-toolbar label {
+  display: block;
+  margin-bottom: 7px;
+  color: #8295b1;
+  font-size: .72rem;
+}
+
+.answer-prompt-template-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.answer-prompt-template-actions .button {
+  height: 40px;
+  padding: 0 11px;
+  font-size: .68rem;
+}
+
+@media (max-width: 820px) {
+  .answer-prompt-template-toolbar { grid-template-columns: 1fr; }
+  .answer-prompt-template-actions { justify-content: flex-start; }
+}
