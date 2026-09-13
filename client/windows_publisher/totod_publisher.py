@@ -10,6 +10,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import sys
 import threading
 import time
@@ -45,6 +46,59 @@ PUBLISH_BUTTONS = (
     "button:has-text('提交回答')",
     ".AnswerForm button:has-text('发布')",
 )
+
+
+def find_supported_browser():
+    """Return the first installed Edge/Chrome executable on Windows."""
+    candidates = []
+    program_files_x86 = os.environ.get("PROGRAMFILES(X86)")
+    program_files = os.environ.get("PROGRAMFILES")
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if program_files_x86:
+        candidates.extend(
+            [
+                ("Microsoft Edge", Path(program_files_x86) / "Microsoft/Edge/Application/msedge.exe"),
+                ("Google Chrome", Path(program_files_x86) / "Google/Chrome/Application/chrome.exe"),
+            ]
+        )
+    if program_files:
+        candidates.extend(
+            [
+                ("Microsoft Edge", Path(program_files) / "Microsoft/Edge/Application/msedge.exe"),
+                ("Google Chrome", Path(program_files) / "Google/Chrome/Application/chrome.exe"),
+            ]
+        )
+    if local_app_data:
+        candidates.extend(
+            [
+                ("Microsoft Edge", Path(local_app_data) / "Microsoft/Edge/Application/msedge.exe"),
+                ("Google Chrome", Path(local_app_data) / "Google/Chrome/Application/chrome.exe"),
+            ]
+        )
+    candidates.extend(
+        [
+            ("Microsoft Edge", Path(sys.executable).parent / "msedge.exe"),
+            ("Google Chrome", Path(sys.executable).parent / "chrome.exe"),
+        ]
+    )
+    for command, name in (
+        ("msedge.exe", "Microsoft Edge"),
+        ("msedge", "Microsoft Edge"),
+        ("chrome.exe", "Google Chrome"),
+        ("chrome", "Google Chrome"),
+    ):
+        resolved = shutil.which(command)
+        if resolved:
+            candidates.append((name, Path(resolved)))
+    checked = set()
+    for name, path in candidates:
+        normalized = str(path).lower()
+        if normalized in checked:
+            continue
+        checked.add(normalized)
+        if path.is_file():
+            return name, path
+    return None
 
 
 def api_request(server: str, token: str, path: str, method: str = "GET", body=None):
@@ -190,9 +244,17 @@ class PublisherWorker(threading.Thread):
             return context
         profile = PROFILE_DIR / account_id
         profile.mkdir(parents=True, exist_ok=True)
+        browser = find_supported_browser()
+        if browser is None:
+            raise RuntimeError(
+                "未找到 Microsoft Edge 或 Google Chrome。请先安装或更新其中一个浏览器，"
+                "然后重新打开本客户端。"
+            )
+        browser_name, browser_path = browser
+        self.emit("log", f"使用 {browser_name}：{browser_path}")
         context = self.playwright.chromium.launch_persistent_context(
             user_data_dir=str(profile),
-            channel="msedge",
+            executable_path=str(browser_path),
             headless=False,
             locale="zh-CN",
             viewport={"width": 1440, "height": 960},
@@ -210,9 +272,9 @@ class PublisherWorker(threading.Thread):
             page = context.pages[0] if context.pages else context.new_page()
             page.bring_to_front()
             page.goto("https://www.zhihu.com/", wait_until="domcontentloaded", timeout=60000)
-            self.emit("status", "知乎已在独立 Edge 窗口打开；请登录后保持窗口开启")
+            self.emit("status", "知乎已在独立浏览器窗口打开；请登录后保持窗口开启")
         except Exception as exc:
-            self.emit("error", f"打开 Edge 失败：{exc}")
+            self.emit("error", f"打开浏览器失败：{exc}")
 
     def poll_once(self):
         try:
