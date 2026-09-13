@@ -3,7 +3,7 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const state = {
-    accounts: [], providers: [], products: [], answerPromptTemplates: [],
+    accounts: [], providers: [], products: [], answerPromptTemplates: [], answerPromptTemplatesAvailable: true,
     questions: { items: [], total: 0 }, questionPage: 1, selectedQuestions: new Set(),
     answers: { items: [], total: 0 }, answerPage: 1, answerStatus: "draft", selectedAnswers: new Set(),
     editingAnswer: null, generationJob: null, publishJob: null, pollTimer: null,
@@ -24,22 +24,44 @@
   function accountOptions() { return state.accounts.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}${item.status === "online" ? "（已登录）" : ""}${item.enabled ? "" : "（已停用）"}</option>`).join(""); }
 
   async function loadBase() {
+    let accounts;
     try {
-      const [accounts, providers, promptTemplates] = await Promise.all([api("/accounts"), api("/ai/providers"), api("/answer-prompt-templates")]);
+      accounts = await api("/accounts");
       state.accounts = accounts;
-      state.providers = providers.filter((item) => item.enabled && item.has_api_key);
-      state.answerPromptTemplates = promptTemplates.items;
-      renderAnswerPromptTemplates();
       const options = `<option value="">请选择知乎账号</option>${accountOptions()}`;
       ["#question-collect-account", "#question-list-account", "#answer-list-account", "#auto-answer-account"].forEach((id) => { const select = $(id); const old = select.value; select.innerHTML = options; if (accounts.some((item) => item.id === old)) select.value = old; else if (accounts.length === 1) select.value = accounts[0].id; });
+    } catch (error) {
+      state.accounts = [];
+      if (!/401|登录/.test(error.message)) toast(`知乎账号加载失败：${error.message}`, "error");
+      return;
+    }
+
+    try {
+      const providers = await api("/ai/providers");
+      state.providers = providers.filter((item) => item.enabled && item.has_api_key);
       const provider = $("#answer-generate-provider"); provider.innerHTML = state.providers.length ? state.providers.map((item) => `<option value="${item.provider}" data-model="${escapeHtml(item.model)}">${escapeHtml(item.display_name)} · ${escapeHtml(item.model)}</option>`).join("") : `<option value="">请先在AI配置启用平台</option>`;
-      const initial = $("#question-list-account").value;
-      if (initial) { $("#question-collect-account").value = initial; await loadQuestionAccount(initial); }
-      const answerAccount = $("#answer-list-account").value;
-      if (answerAccount) await loadAnswers(true);
-      const autoAccount = $("#auto-answer-account").value;
-      if (autoAccount) await loadAutoSummary();
-    } catch (error) { if (!/401|登录/.test(error.message)) toast(error.message, "error"); }
+    } catch (error) {
+      state.providers = [];
+      $("#answer-generate-provider").innerHTML = `<option value="">AI平台加载失败</option>`;
+      if (!/401|登录/.test(error.message)) toast(`AI平台加载失败：${error.message}`, "error");
+    }
+
+    try {
+      const promptTemplates = await api("/answer-prompt-templates");
+      state.answerPromptTemplates = promptTemplates.items;
+      state.answerPromptTemplatesAvailable = true;
+    } catch (error) {
+      state.answerPromptTemplates = [];
+      state.answerPromptTemplatesAvailable = false;
+      toast(/Not Found|HTTP 404/.test(error.message) ? "服务器前后端版本不一致，请重新执行完整部署" : `回答模板加载失败：${error.message}`, "error");
+    }
+    renderAnswerPromptTemplates();
+    const initial = $("#question-list-account").value;
+    if (initial) { $("#question-collect-account").value = initial; await loadQuestionAccount(initial); }
+    const answerAccount = $("#answer-list-account").value;
+    if (answerAccount) await loadAnswers(true);
+    const autoAccount = $("#auto-answer-account").value;
+    if (autoAccount) await loadAutoSummary();
   }
 
   function renderAnswerPromptTemplates(selectedId = "") {
@@ -48,6 +70,8 @@
     select.innerHTML = `<option value="">当前未使用已保存模板</option>${state.answerPromptTemplates.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
     if (state.answerPromptTemplates.some((item) => item.id === activeId)) select.value = activeId;
     const hasTemplate = Boolean(select.value);
+    select.disabled = !state.answerPromptTemplatesAvailable;
+    $("#answer-prompt-template-create").disabled = !state.answerPromptTemplatesAvailable;
     $("#answer-prompt-template-update").disabled = !hasTemplate;
     $("#answer-prompt-template-rename").disabled = !hasTemplate;
     $("#answer-prompt-template-delete").disabled = !hasTemplate;

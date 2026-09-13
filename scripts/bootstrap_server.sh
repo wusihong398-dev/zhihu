@@ -17,6 +17,7 @@ install -m 644 "${PROJECT_DIR}/frontend/dist/assets/app.js" /var/www/totod/asset
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/article-workflow.css" /var/www/totod/assets/article-workflow.css
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/login.css" /var/www/totod/assets/login.css
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/qa.css" /var/www/totod/assets/qa.css
+install -m 644 "${PROJECT_DIR}/frontend/dist/assets/answer-prompts.css" /var/www/totod/assets/answer-prompts.css
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/qa.js" /var/www/totod/assets/qa.js
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/operations.css" /var/www/totod/assets/operations.css
 install -m 644 "${PROJECT_DIR}/frontend/dist/assets/operations.js" /var/www/totod/assets/operations.js
