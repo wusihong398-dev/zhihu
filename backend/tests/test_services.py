@@ -18,7 +18,11 @@ from app.services.keyword_collector import (
 from app.services.keyword_recycle import mark_keyword_used
 from app.services.secret_box import decrypt_secret, encrypt_secret, mask_secret
 from app.services.zhihu_article_sync import _published_article_from_payload
-from app.services.zhihu_answer_publisher import _answer_id_from_payload
+from app.services.zhihu_answer_publisher import (
+    _WRITE_ANSWER_SELECTORS,
+    _answer_id_from_payload,
+    _answer_unavailable_reason,
+)
 from app.services.zhihu_login import has_zhihu_auth_cookie
 from app.services.zhihu_publisher import (
     ZhihuPublishError,
@@ -256,6 +260,17 @@ def test_qa_payload_parsers_extract_question_and_answer_ids() -> None:
     assert questions[0].keyword == "头发护理"
     assert _answer_id_from_payload({"data": {"id": 987654321}}) == "987654321"
     assert _answer_id_from_payload({"message": "failed"}) is None
+
+
+def test_answer_publisher_supports_new_write_button_and_specific_reasons() -> None:
+    assert "button:has-text('写回答')" in _WRITE_ANSWER_SELECTORS
+    assert _answer_unavailable_reason("该问题已关闭回答") == (
+        "该问题已关闭回答，无法发布"
+    )
+    assert _answer_unavailable_reason("你已经回答过，修改回答") == (
+        "当前知乎账号已经回答过该问题，请在知乎修改原回答"
+    )
+    assert _answer_unavailable_reason("普通问题页面") is None
 
 
 def test_zhihu_public_url_does_not_accept_editor_url() -> None:

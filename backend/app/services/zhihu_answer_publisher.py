@@ -19,6 +19,39 @@ class ZhihuAnswerLoginRequired(ZhihuAnswerPublishError):
     pass
 
 
+_ANSWER_EDITOR_SELECTORS = (
+    ".AnswerForm-editor .ProseMirror[contenteditable='true']",
+    ".AnswerForm-editor [contenteditable='true']",
+    ".ProseMirror[contenteditable='true']",
+    ".DraftEditor-root [contenteditable='true']",
+    ".public-DraftEditor-content[contenteditable='true']",
+    "[contenteditable='true'][role='textbox']",
+    "[contenteditable='true'][data-contents='true']",
+)
+
+_WRITE_ANSWER_SELECTORS = (
+    "button:has-text('写回答')",
+    "[role='button']:has-text('写回答')",
+    "a:has-text('写回答')",
+    "button:has-text('添加回答')",
+    "[role='button']:has-text('添加回答')",
+    "button:has-text('回答问题')",
+    "[role='button']:has-text('回答问题')",
+    "button:has-text('参与回答')",
+    "[aria-label*='写回答']",
+    "[data-za-detail-view-element_name*='Answer']:has-text('回答')",
+)
+
+_PUBLISH_ANSWER_SELECTORS = (
+    "button:has-text('发布回答')",
+    "[role='button']:has-text('发布回答')",
+    "button:has-text('提交回答')",
+    "[role='button']:has-text('提交回答')",
+    ".AnswerForm button:has-text('发布')",
+    ".AnswerForm [role='button']:has-text('发布')",
+)
+
+
 def _answer_id_from_payload(payload: Any) -> str | None:
     if not isinstance(payload, dict):
         return None
@@ -41,6 +74,32 @@ async def _first_visible(page: Any, selectors: tuple[str, ...]) -> Any:
                     return item
         except Exception:
             continue
+    return None
+
+
+async def _wait_for_visible(
+    page: Any,
+    selectors: tuple[str, ...],
+    *,
+    attempts: int = 12,
+    interval_ms: int = 500,
+) -> Any:
+    for _ in range(max(1, attempts)):
+        item = await _first_visible(page, selectors)
+        if item is not None:
+            return item
+        await page.wait_for_timeout(interval_ms)
+    return None
+
+
+def _answer_unavailable_reason(body: str) -> str | None:
+    compact = "".join(body.split())
+    if any(marker in compact for marker in ("问题已关闭", "已关闭回答", "不能回答")):
+        return "该问题已关闭回答，无法发布"
+    if any(marker in compact for marker in ("问题已删除", "内容不存在", "页面不存在")):
+        return "知乎问题已删除或不存在"
+    if any(marker in compact for marker in ("修改回答", "编辑回答", "你已经回答过")):
+        return "当前知乎账号已经回答过该问题，请在知乎修改原回答"
     return None
 
 
@@ -114,35 +173,30 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
         if any(marker in body for marker in ("安全验证", "验证码", "登录知乎")):
             raise ZhihuAnswerLoginRequired("知乎要求重新登录或完成安全验证")
 
-        editor = await _first_visible(
-            page,
-            (
-                ".ProseMirror[contenteditable='true']",
-                ".DraftEditor-root [contenteditable='true']",
-                "[contenteditable='true'][role='textbox']",
-            ),
-        )
+        unavailable_reason = _answer_unavailable_reason(body)
+        if unavailable_reason:
+            raise ZhihuAnswerPublishError(unavailable_reason)
+
+        editor = await _first_visible(page, _ANSWER_EDITOR_SELECTORS)
         if editor is None:
-            write_button = await _first_visible(
-                page,
-                (
-                    "button:text-is('写回答')",
-                    "button:text-is('添加回答')",
-                    "[role='button']:text-is('写回答')",
-                ),
+            await page.evaluate("window.scrollTo(0, 0)")
+            write_button = await _wait_for_visible(
+                page, _WRITE_ANSWER_SELECTORS, attempts=8
             )
             if write_button is None:
-                raise ZhihuAnswerPublishError("没有找到“写回答”按钮，问题可能已关闭回答")
-            await write_button.click()
-            await page.wait_for_timeout(1300)
-            editor = await _first_visible(
-                page,
-                (
-                    ".ProseMirror[contenteditable='true']",
-                    ".DraftEditor-root [contenteditable='true']",
-                    "[contenteditable='true'][role='textbox']",
-                ),
-            )
+                body = await page.locator("body").inner_text(timeout=5000)
+                unavailable_reason = _answer_unavailable_reason(body)
+                if unavailable_reason:
+                    raise ZhihuAnswerPublishError(unavailable_reason)
+                raise ZhihuAnswerPublishError(
+                    "知乎页面已打开，但没有识别到回答入口；可能是页面结构更新或账号回答权限受限"
+                )
+            try:
+                await write_button.scroll_into_view_if_needed(timeout=3000)
+                await write_button.click(timeout=5000)
+            except Exception:
+                await write_button.click(timeout=5000, force=True)
+            editor = await _wait_for_visible(page, _ANSWER_EDITOR_SELECTORS)
         if editor is None:
             raise ZhihuAnswerPublishError("知乎回答编辑器没有正常打开")
 
@@ -158,14 +212,8 @@ async def publish_answer_to_zhihu(account: ZhihuAccount, answer: ZhihuAnswer) ->
                 answer.content,
             )
         await page.wait_for_timeout(700)
-        publish_button = await _first_visible(
-            page,
-            (
-                "button:text-is('发布回答')",
-                "button:text-is('提交回答')",
-                "button:text-is('发布')",
-                "[role='button']:text-is('发布回答')",
-            ),
+        publish_button = await _wait_for_visible(
+            page, _PUBLISH_ANSWER_SELECTORS, attempts=8
         )
         if publish_button is None:
             raise ZhihuAnswerPublishError("没有找到“发布回答”按钮")
