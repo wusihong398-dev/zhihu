@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, mediaUploadRunning: false, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -1058,23 +1058,125 @@
     } catch (error) { toast(error.message, "error"); }
   }
 
+  function setMediaUploadProgress({ percent, currentIndex, total, currentName, currentPercent, remaining, succeeded, failed, status = "uploading" }) {
+    const panel = $("#media-upload-progress");
+    const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+    const safeCurrentPercent = Math.max(0, Math.min(100, Math.round(currentPercent)));
+    const labels = { uploading: "正在上传", completed: "上传完成", partial: "部分失败", failed: "上传失败" };
+    panel.hidden = false;
+    panel.dataset.status = status;
+    panel.setAttribute("aria-valuenow", String(safePercent));
+    $("#media-upload-state").textContent = labels[status] || labels.uploading;
+    $("#media-upload-percent").textContent = `${safePercent}%`;
+    $("#media-upload-count").textContent = `${currentIndex} / ${total}`;
+    $("#media-upload-progress-bar").style.width = `${safePercent}%`;
+    $("#media-upload-current").textContent = currentName || "—";
+    $("#media-upload-current").title = currentName || "";
+    $("#media-upload-current-percent").textContent = `${safeCurrentPercent}%`;
+    $("#media-upload-remaining").textContent = `${remaining} 个`;
+    $("#media-upload-result").textContent = `成功 ${succeeded} · 失败 ${failed}`;
+  }
+
+  function uploadSingleMediaFile(file, folderId, onProgress) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", "/api/local-media/upload");
+      request.responseType = "json";
+      if (state.token) request.setRequestHeader("Authorization", `Bearer ${state.token}`);
+      request.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+      });
+      request.addEventListener("load", () => {
+        let data = request.response || {};
+        if (typeof data === "string") {
+          try { data = JSON.parse(data); } catch { data = {}; }
+        }
+        if (request.status === 401) {
+          logout("登录已过期，请重新登录");
+          const error = new Error("登录已过期");
+          error.authExpired = true;
+          reject(error);
+          return;
+        }
+        if (request.status < 200 || request.status >= 300) {
+          const detail = Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join("；") : data.detail;
+          reject(new Error(detail || `${file.name} 上传失败（${request.status || "网络错误"}）`));
+          return;
+        }
+        onProgress(1);
+        resolve(data);
+      });
+      request.addEventListener("error", () => reject(new Error(`${file.name} 上传时网络连接失败`)));
+      request.addEventListener("abort", () => reject(new Error(`${file.name} 上传已取消`)));
+      const form = new FormData();
+      form.append("files", file);
+      if (folderId) form.append("folder_id", folderId);
+      request.send(form);
+    });
+  }
+
   async function uploadMedia(event) {
     event.preventDefault();
+    if (state.mediaUploadRunning) return;
     const files = [...$("#media-upload-files").files];
     if (!files.length) return $("#media-upload-error").textContent = "请选择图片或压缩包";
-    const form = new FormData();
-    files.forEach((file) => form.append("files", file));
-    if ($("#media-upload-folder").value) form.append("folder_id", $("#media-upload-folder").value);
+    const folderId = $("#media-upload-folder").value;
     const button = $("#media-upload-submit");
+    const fileInput = $("#media-upload-files");
+    const folderSelect = $("#media-upload-folder");
+    const weights = files.map((file) => Math.max(1, file.size));
+    const totalWeight = weights.reduce((sum, size) => sum + size, 0);
+    let completedWeight = 0;
+    let succeeded = 0;
+    const failures = [];
     $("#media-upload-error").textContent = "";
+    state.mediaUploadRunning = true;
+    fileInput.disabled = true;
+    folderSelect.disabled = true;
     setBusy(button, true, "正在上传…");
+    setMediaUploadProgress({ percent: 0, currentIndex: 0, total: files.length, currentName: "准备上传", currentPercent: 0, remaining: files.length, succeeded: 0, failed: 0 });
     try {
-      const result = await api("/local-media/upload", { method: "POST", body: form });
-      $("#media-upload-files").value = "";
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const currentWeight = weights[index];
+        const renderProgress = (ratio) => setMediaUploadProgress({
+          percent: (completedWeight + currentWeight * ratio) / totalWeight * 100,
+          currentIndex: index + 1,
+          total: files.length,
+          currentName: file.name,
+          currentPercent: ratio * 100,
+          remaining: files.length - index - 1,
+          succeeded,
+          failed: failures.length,
+        });
+        renderProgress(0);
+        try {
+          const result = await uploadSingleMediaFile(file, folderId, renderProgress);
+          succeeded += result.uploaded_count || 1;
+        } catch (error) {
+          failures.push({ name: file.name, message: error.message });
+          if (error.authExpired) return;
+        }
+        completedWeight += currentWeight;
+        renderProgress(1);
+      }
+      fileInput.value = "";
       await loadMedia(true);
-      toast(`已上传 ${result.uploaded_count} 个文件`);
-    } catch (error) { $("#media-upload-error").textContent = error.message; }
-    finally { setBusy(button, false); }
+      const status = failures.length === files.length ? "failed" : failures.length ? "partial" : "completed";
+      setMediaUploadProgress({ percent: 100, currentIndex: files.length, total: files.length, currentName: "全部文件已处理", currentPercent: 100, remaining: 0, succeeded, failed: failures.length, status });
+      if (failures.length) {
+        const details = failures.slice(0, 5).map((item) => `${item.name}：${item.message}`).join("；");
+        $("#media-upload-error").textContent = `有 ${failures.length} 个文件上传失败：${details}${failures.length > 5 ? "；其余失败文件请分批重试" : ""}`;
+        toast(`上传结束：成功 ${succeeded} 个，失败 ${failures.length} 个`, failures.length === files.length ? "error" : "success");
+      } else {
+        toast(`已上传 ${succeeded} 个文件`);
+      }
+    } finally {
+      state.mediaUploadRunning = false;
+      fileInput.disabled = false;
+      folderSelect.disabled = false;
+      setBusy(button, false);
+    }
   }
 
   async function createMediaFolder() {

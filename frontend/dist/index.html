@@ -7,11 +7,11 @@
   <meta name="description" content="TOTOD 知乎多账号内容运营管理后台">
   <title>TOTOD 知乎运营助手</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-  <link rel="stylesheet" href="/assets/app.css?v=0.14.0">
-  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.14.0">
-  <link rel="stylesheet" href="/assets/login.css?v=0.14.0">
-  <link rel="stylesheet" href="/assets/qa.css?v=0.14.0">
-  <link rel="stylesheet" href="/assets/operations.css?v=0.14.0">
+  <link rel="stylesheet" href="/assets/app.css?v=0.14.1">
+  <link rel="stylesheet" href="/assets/article-workflow.css?v=0.14.1">
+  <link rel="stylesheet" href="/assets/login.css?v=0.14.1">
+  <link rel="stylesheet" href="/assets/qa.css?v=0.14.1">
+  <link rel="stylesheet" href="/assets/operations.css?v=0.14.1">
 </head>
 <body>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -274,6 +274,16 @@
             <label class="media-file-picker" for="media-upload-files"><strong>选择图片或压缩包</strong><small>支持 JPG、PNG、WebP、GIF、BMP、TIFF、AVIF，以及 ZIP、TAR、TAR.GZ、TGZ；压缩包上传后手动解压。</small><input id="media-upload-files" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,image/avif,.zip,.tar,.tar.gz,.tgz"></label>
             <button id="media-upload-submit" class="button button-primary" type="submit">上传到服务器</button>
           </form>
+          <div id="media-upload-progress" class="media-upload-progress" role="progressbar" aria-label="图片上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+            <div class="media-upload-progress-head"><div><span id="media-upload-state" class="badge">准备上传</span><strong id="media-upload-percent">0%</strong></div><span id="media-upload-count">0 / 0</span></div>
+            <div class="progress-track"><i id="media-upload-progress-bar"></i></div>
+            <div class="media-upload-progress-details">
+              <div><small>当前文件</small><strong id="media-upload-current" title="">—</strong></div>
+              <div><small>当前文件进度</small><strong id="media-upload-current-percent">0%</strong></div>
+              <div><small>剩余文件</small><strong id="media-upload-remaining">0 个</strong></div>
+              <div><small>上传结果</small><strong id="media-upload-result">成功 0 · 失败 0</strong></div>
+            </div>
+          </div>
           <p id="media-upload-error" class="form-error"></p>
         </section>
         <section class="panel media-library-panel">
@@ -513,8 +523,8 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.14.0" defer></script>
-  <script src="/assets/qa.js?v=0.14.0" defer></script>
-  <script src="/assets/operations.js?v=0.14.0" defer></script>
+  <script src="/assets/app.js?v=0.14.1" defer></script>
+  <script src="/assets/qa.js?v=0.14.1" defer></script>
+  <script src="/assets/operations.js?v=0.14.1" defer></script>
 </body>
 </html>

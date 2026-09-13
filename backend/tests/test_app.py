@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.14.0"
+        assert version.json()["version"] == "0.14.1"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -119,8 +119,14 @@ def test_local_media_page_and_generation_variable_are_exposed() -> None:
     assert 'data-page="local-media"' in index
     assert 'id="local-media-page"' in index
     assert 'id="media-upload-form"' in index
+    assert 'id="media-upload-progress"' in index
+    assert 'id="media-upload-current"' in index
+    assert 'id="media-upload-remaining"' in index
     assert 'id="article-local-image-folder"' in index
     assert "{本地图片}" in index
     assert "/local-media/upload" in script
+    assert "uploadSingleMediaFile" in script
+    assert "request.upload.addEventListener" in script
+    assert "files.length - index - 1" in script
     assert "/extract" in script
     assert "local_image_folder_id" in script
