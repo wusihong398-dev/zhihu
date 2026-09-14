@@ -1,5 +1,10 @@
 # TOTOD 知乎运营助手
 
+## v0.18.1
+
+- 修复 WebView2 客户端自动连接成功后再次点击“保存并连接”时，重复修改已使用的 `HttpClient` 导致连接失败的问题。
+- 每次连接会安全创建新的服务器会话，登录按钮完整显示“登录并自动监听”。
+
 ## v0.18.0 WebView2 测试版
 
 - 新增内嵌 Microsoft Edge WebView2 的 Windows 发布客户端，使用 WebView2 Evergreen Runtime，不再启动带“受自动测试软件控制”提示的外部 Chrome。

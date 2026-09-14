@@ -11,15 +11,15 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.18.0";
+    const string AppVersion = "0.18.1";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
-    readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
+    HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
     readonly TextBox token = new() { PasswordChar = '●', Width = 320 };
     readonly ComboBox accounts = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 350 };
     readonly Button connect = new() { Text = "保存并连接" };
-    readonly Button login = new() { Text = "登录并自动监听" };
-    readonly Button stop = new() { Text = "停止监听", Enabled = false };
+    readonly Button login = new() { Text = "登录并自动监听", AutoSize = true };
+    readonly Button stop = new() { Text = "停止监听", Enabled = false, AutoSize = true };
     readonly Label status = new() { AutoSize = true, ForeColor = Color.SeaGreen, Text = "请先连接服务器" };
     readonly TextBox log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 125 };
     readonly WebView2 browser = new() { Dock = DockStyle.Fill };
@@ -59,8 +59,9 @@ internal sealed class MainForm : Form
 
     void ConfigureRequest()
     {
+        http.Dispose();
+        http = new HttpClient { Timeout = TimeSpan.FromSeconds(40) };
         http.BaseAddress = new Uri(server.Text.Trim().TrimEnd('/') + "/api/");
-        http.DefaultRequestHeaders.Remove("X-TOTOD-Device-Token");
         http.DefaultRequestHeaders.Add("X-TOTOD-Device-Token", token.Text.Trim());
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"TOTOD-WebView2-Publisher/{AppVersion}");
     }
