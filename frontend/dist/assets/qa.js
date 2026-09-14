@@ -190,6 +190,9 @@
   }
   function renderQuestions() {
     const list = $("#question-list"); list.innerHTML = state.questions.items.map((item) => `<div class="qa-table qa-question-row ${state.selectedQuestions.has(item.id) ? "qa-row-selected" : ""}" data-question-id="${item.id}"><div class="qa-title-cell"><input class="question-check" type="checkbox" ${state.selectedQuestions.has(item.id) ? "checked" : ""}><div><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong><small>${escapeHtml(item.excerpt || item.url)}</small></div></div><span class="qa-cell">${escapeHtml(item.keyword_text || "—")}</span><span class="qa-cell">${item.answer_count || 0}</span><span class="badge ${item.status === "answered" ? "ok" : "off"}">${item.status === "answered" ? "已生成" : item.status === "ignored" ? "已忽略" : "待处理"}</span><div class="qa-actions"><a class="button button-ghost" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">查看</a></div></div>`).join("");
+    const questionHeader = $(".qa-question-header");
+    if (questionHeader && questionHeader.children.length === 5) { const heading = document.createElement("span"); heading.textContent = "采集时间"; questionHeader.insertBefore(heading, questionHeader.children[3]); }
+    state.questions.items.forEach((item, index) => { const row = list.children[index]; if (!row || row.querySelector(".qa-question-time")) return; const cell = document.createElement("span"); cell.className = "qa-cell qa-question-time"; cell.textContent = formatTime(item.discovered_at); row.insertBefore(cell, row.children[3]); });
     $("#question-empty").hidden = state.questions.total > 0; $("#question-total").textContent = `共 ${state.questions.total} 个问题`;
     const pages = Math.max(1, Math.ceil(state.questions.total / 100)); $("#question-pagination").hidden = !state.questions.total; $("#question-page-info").textContent = `第 ${state.questionPage} / ${pages} 页 · 每页100个`; $("#question-prev").disabled = state.questionPage <= 1; $("#question-next").disabled = state.questionPage >= pages;
     $$(".question-check", list).forEach((box) => box.addEventListener("change", () => { const id = box.closest("[data-question-id]").dataset.questionId; box.checked ? state.selectedQuestions.add(id) : state.selectedQuestions.delete(id); renderQuestions(); }));
@@ -220,6 +223,8 @@
   function answerStatusLabel(value) { return ({ draft: "草稿", ready: "待发布", published: "已发布", failed: "失败" })[value] || value; }
   function renderAnswers() {
     const list = $("#answer-list"); list.innerHTML = state.answers.items.map((item) => { const time = item.published_at || item.publish_attempted_at; const action = item.status === "published" && item.published_url ? `<a class="button button-ghost" href="${escapeHtml(item.published_url)}" target="_blank" rel="noopener">查看</a>` : `<button class="button button-primary answer-publish-one">发布</button>`; const diagnostic = item.status === "failed" ? `<button class="button button-ghost answer-diagnostic" title="查看服务器发布时实际打开的知乎页面">诊断图</button>` : ""; return `<div class="qa-table qa-answer-row ${state.selectedAnswers.has(item.id) ? "qa-row-selected" : ""}" data-answer-id="${item.id}"><div class="qa-title-cell"><input class="answer-check" type="checkbox" ${state.selectedAnswers.has(item.id) ? "checked" : ""}><div><strong title="${escapeHtml(item.question_title)}">${escapeHtml(item.question_title)}</strong><small>${item.content_length}字 · ${escapeHtml(item.keyword_text || "无关键词")}${item.error_message ? `<b class="qa-failure">失败原因：${escapeHtml(item.error_message)}</b>` : ""}</small></div></div><span class="qa-cell">${escapeHtml(item.product_name || "—")}</span><span class="badge qa-status ${item.status}">${answerStatusLabel(item.status)}</span><span class="qa-cell">${formatTime(time)}</span><div class="qa-actions">${action}${diagnostic}<button class="button button-ghost answer-edit">编辑</button><button class="button button-ghost danger-text answer-delete">删除</button></div></div>`; }).join("");
+    const answerTimeHeader = $(".qa-answer-header span:nth-child(4)"); if (answerTimeHeader) answerTimeHeader.textContent = "回答时间 / 尝试时间";
+    state.answers.items.forEach((item, index) => { const row = list.children[index], cell = row?.children[3]; if (!cell) return; cell.classList.add("qa-time-cell"); const label = item.status === "published" ? "回答时间" : item.status === "failed" ? "尝试时间" : ""; const time = item.status === "published" ? item.published_at : item.status === "failed" ? item.publish_attempted_at : null; cell.replaceChildren(); if (!label) { cell.textContent = "—"; return; } const caption = document.createElement("small"); caption.textContent = label; cell.append(caption, document.createTextNode(formatTime(time))); });
     $("#answer-empty").hidden = state.answers.total > 0; $("#answer-total").textContent = `共 ${state.answers.total} 个回答`;
     const pages = Math.max(1, Math.ceil(state.answers.total / 100)); $("#answer-pagination").hidden = !state.answers.total; $("#answer-page-info").textContent = `第 ${state.answerPage} / ${pages} 页 · 每页100个`; $("#answer-prev").disabled = state.answerPage <= 1; $("#answer-next").disabled = state.answerPage >= pages;
     $$(".answer-check", list).forEach((box) => box.addEventListener("change", () => { const id = box.closest("[data-answer-id]").dataset.answerId; box.checked ? state.selectedAnswers.add(id) : state.selectedAnswers.delete(id); renderAnswers(); }));
@@ -238,7 +243,15 @@
       if (popup) popup.location.href = url; else window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) {
-      if (popup) popup.close();
+      if (popup && !popup.closed) {
+        const doc = popup.document; doc.title = "TOTOD 回答诊断信息"; doc.body.replaceChildren();
+        Object.assign(doc.body.style, { margin: "0", background: "#071426", color: "#d8e6ff", fontFamily: "Microsoft YaHei, sans-serif" });
+        const panel = doc.createElement("main"); Object.assign(panel.style, { maxWidth: "760px", margin: "80px auto", padding: "30px", border: "1px solid #24466d", borderRadius: "14px", background: "#0b1b30" });
+        const title = doc.createElement("h2"); title.textContent = "暂无诊断截图";
+        const detail = doc.createElement("p"); detail.textContent = error.message; Object.assign(detail.style, { color: "#ff93a7", lineHeight: "1.8" });
+        const help = doc.createElement("p"); help.textContent = "本地 Windows 客户端发布失败时，服务器不会生成页面截图。请以回答列表中的失败原因和客户端底部运行日志为准。"; Object.assign(help.style, { color: "#91a9c8", lineHeight: "1.8" });
+        panel.append(title, detail, help); doc.body.append(panel);
+      }
       toast(error.message, "error");
     }
   }

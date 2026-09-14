@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.18.3"
+        assert version.json()["version"] == "0.18.4"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -93,6 +93,12 @@ def test_qa_pages_are_functional_modules() -> None:
     assert "服务器前后端版本不一致，请重新执行完整部署" in script
     assert "answer-diagnostic" in script
     assert "/failure-screenshot" in script
+    assert "暂无诊断截图" in script
+    assert "popup.close()" not in script
+    assert "采集时间" in script
+    assert "item.discovered_at" in script
+    assert "回答时间 / 尝试时间" in script
+    assert 'item.status === "published" ? item.published_at' in script
     assert "finishedJob?.failed_count" in script
     assert 'accounts = await api("/accounts")' in script
     assert 'const providers = await api("/ai/providers")' in script
