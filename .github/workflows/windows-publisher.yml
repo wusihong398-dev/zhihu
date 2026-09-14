@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
       - name: Install dependencies
         run: pip install -r client/windows_publisher/requirements.txt
       - name: Verify installed browser detection
@@ -27,8 +30,12 @@ jobs:
       - name: Build executable
         working-directory: client/windows_publisher
         run: pyinstaller --noconfirm --clean --onefile --windowed --name TOTOD-Windows-Publisher --collect-all playwright totod_publisher.py
+      - name: Build WebView2 test client
+        run: dotnet publish client/webview2_publisher/TOTOD.WebView2Publisher.csproj -c Release -r win-x64 --self-contained true -o client/webview2_publisher/dist
       - uses: actions/upload-artifact@v4
         with:
           name: TOTOD-Windows-Publisher
-          path: client/windows_publisher/dist/TOTOD-Windows-Publisher.exe
+          path: |
+            client/windows_publisher/dist/TOTOD-Windows-Publisher.exe
+            client/webview2_publisher/dist/TOTOD-WebView2-Publisher.exe
           if-no-files-found: error

@@ -5,7 +5,7 @@
 ## 使用步骤
 
 1. 在 TOTOD 后台进入“任务与系统 → 本地发布客户端”，绑定电脑并复制一次性设备密钥。
-2. 下载 GitHub Actions 中最新的 `TOTOD-Windows-Publisher` 构建产物并解压运行。
+2. 下载 GitHub Actions 中最新的 `TOTOD-Windows-Publisher` 构建产物；优先运行 `TOTOD-WebView2-Publisher.exe` 测试内嵌 Edge，原 `TOTOD-Windows-Publisher.exe` 仅作回退。
 3. 填写 `https://totod.cn` 和设备密钥，点击“保存并连接”。
 4. 到 TOTOD 的知乎账号编辑页，将回答发布方式设为“Windows 本地客户端”。
 5. 在客户端选择 qwg2，点击“登录并自动监听”，在打开的 Edge 中完成知乎登录。

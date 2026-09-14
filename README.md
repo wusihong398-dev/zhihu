@@ -1,5 +1,11 @@
 # TOTOD 知乎运营助手
 
+## v0.18.0 WebView2 测试版
+
+- 新增内嵌 Microsoft Edge WebView2 的 Windows 发布客户端，使用 WebView2 Evergreen Runtime，不再启动带“受自动测试软件控制”提示的外部 Chrome。
+- 每个知乎账号使用独立 WebView2 用户资料目录，自动保存 Cookie、缓存和登录状态；继续使用现有设备密钥、回答队列及真实发布链接回写接口。
+- GitHub Actions 同时打包 `TOTOD-WebView2-Publisher.exe` 测试版与原客户端，测试版验证通过前保留旧版回退。
+
 ## v0.17.5
 
 - Windows 客户端现在能识别知乎问题页直接返回的 `40362` 风控 JSON，不再误报为“没有识别到写回答入口”。
