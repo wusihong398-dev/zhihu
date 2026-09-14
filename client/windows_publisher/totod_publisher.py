@@ -23,7 +23,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 
-APP_VERSION = "0.17.4"
+APP_VERSION = "0.17.5"
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "TOTODPublisher"
 CONFIG_PATH = APP_DIR / "config.json"
 PROFILE_DIR = APP_DIR / "profiles"
@@ -47,6 +47,21 @@ PUBLISH_BUTTONS = (
     "button:has-text('提交回答')",
     ".AnswerForm button:has-text('发布')",
 )
+
+
+class ZhihuRiskControlError(RuntimeError):
+    """Zhihu explicitly rejected the browser session for risk-control reasons."""
+
+
+def zhihu_risk_control_reason(body):
+    compact = re.sub(r"\s+", "", body or "")
+    if re.search(r'["\']?code["\']?:40362', compact) or "暂时限制本次访问" in compact:
+        return (
+            "知乎风控 40362：本机自动化浏览器被暂时限制访问。客户端已停止监听，"
+            "请勿连续重试；请先使用该账号的日常浏览器或知乎手机端完成验证，"
+            "确认同一问题可以正常打开后再重新监听"
+        )
+    return None
 
 
 def find_supported_browser():
@@ -355,6 +370,7 @@ class PublisherWorker(threading.Thread):
                 return
             self.emit("status", f"正在发布：{task['question_title']}")
             self.emit("log", f"领取任务：{task['question_title']}")
+            risk_controlled = False
             try:
                 published_url = self.publish(task)
                 api_request(
@@ -367,6 +383,7 @@ class PublisherWorker(threading.Thread):
                 self.emit("log", f"发布成功：{published_url}")
             except Exception as exc:
                 failure = str(exc)[:1800]
+                risk_controlled = isinstance(exc, ZhihuRiskControlError)
                 api_request(
                     self.server,
                     self.token,
@@ -375,6 +392,13 @@ class PublisherWorker(threading.Thread):
                     {"success": False, "error_message": failure},
                 )
                 self.emit("log", f"发布失败：{failure}")
+            if risk_controlled:
+                self.running = False
+                self.account_id = ""
+                self.auto_start_account_id = ""
+                self.emit("listening", False)
+                self.emit("status", "已停止监听：知乎风控 40362，请先人工解除限制")
+                return
             self.emit("status", "运行中：正在等待下一项任务")
         except Exception as exc:
             self.emit("error", str(exc))
@@ -396,6 +420,9 @@ class PublisherWorker(threading.Thread):
         page.goto(task["question_url"], wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(1800)
         body = page.locator("body").inner_text(timeout=5000)
+        risk_reason = zhihu_risk_control_reason(body)
+        if risk_reason:
+            raise ZhihuRiskControlError(risk_reason)
         if any(text in body for text in ("安全验证", "验证码", "登录知乎")):
             raise RuntimeError("知乎要求登录或安全验证，请在打开的 Edge 窗口人工完成后重试")
         if any(text in body.replace(" ", "") for text in ("问题已关闭", "不能回答", "你已经回答过")):
