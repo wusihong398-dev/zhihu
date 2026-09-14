@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, mediaUploadRunning: false, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuBrowserBusy: false, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
+  const state = { token: sessionStorage.getItem("totod_token") || "", user: null, users: [], editingUserId: null, accounts: [], editingAccountId: null, products: [], editingProductId: null, providers: [], keywordAccountId: "", keywords: { items: [], total: 0 }, keywordFolders: [], selectedKeywords: new Set(), keywordPage: 1, keywordPageSize: 100, keywordJob: null, recycledKeywords: { items: [], total: 0 }, selectedRecycledKeywords: new Set(), recycleKeywordPage: 1, mediaFolders: [], media: { items: [], total: 0 }, selectedMedia: new Set(), mediaPage: 1, mediaPageSize: 100, mediaUploadRunning: false, articles: { items: [], total: 0 }, selectedArticles: new Set(), articlePage: 1, articlePageSize: 100, editingArticle: null, articleGenerateKeywords: [], selectedArticleKeywords: new Set(), articleGenerateProducts: [], promptFolders: [], promptTemplates: [], generationJob: null, publishJob: null, articleJobTimers: { generate: null, publish: null }, articleJobPollFailures: { generate: 0, publish: 0 }, page: "overview", pollTimer: null, articleSearchTimer: null, zhihuLoginTimer: null, zhihuLogin: null, zhihuBrowserBusy: false, zhihuScreenshotUrl: "", zhihuScreenshotVersion: -1 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -1621,6 +1621,16 @@
   const articleJobStatusLabels = { pending: "等待中", running: "执行中", paused: "已暂停", stopped: "已停止", completed: "已完成", failed: "任务失败" };
   const activeArticleJobStatuses = new Set(["pending", "running", "paused"]);
 
+  function articleJobCurrentText(job) {
+    const fallback = job.status === "completed" ? "全部处理完成" : job.status === "stopped" ? "任务已停止" : "等待下一项";
+    const current = job.current_item || fallback;
+    if (job.job_type !== "generate" || job.status !== "running" || !job.updated_at) return current;
+    const updatedAt = new Date(job.updated_at).getTime();
+    if (!Number.isFinite(updatedAt)) return current;
+    const seconds = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+    return `${current} · 已等待 ${seconds} 秒`;
+  }
+
   function renderJobAt(prefix, job, container) {
     if (!container) return;
     container.hidden = !job && !container.classList.contains("standalone");
@@ -1630,7 +1640,7 @@
     $(`#${prefix}-percent`).textContent = `${job.progress_percent}%`;
     $(`#${prefix}-count`).textContent = `${job.completed_count} / ${job.total_count} · 成功 ${job.success_count} · 失败 ${job.failed_count}`;
     $(`#${prefix}-bar`).style.width = `${job.progress_percent}%`;
-    $(`#${prefix}-current`).textContent = job.current_item || (job.status === "completed" ? "全部处理完成" : job.status === "stopped" ? "任务已停止" : "等待下一项");
+    $(`#${prefix}-current`).textContent = articleJobCurrentText(job);
     $(`#${prefix}-message`).textContent = job.error_message || "";
     $(`#${prefix}-pause`).disabled = !["pending", "running"].includes(job.status);
     $(`#${prefix}-resume`).disabled = job.status !== "paused";
@@ -1650,21 +1660,31 @@
     renderJobAt("article-publish-page", job, $("#article-publish-job-page"));
   }
 
-  function scheduleArticleJobPoll(type, id) {
+  function scheduleArticleJobPoll(type, id, delay = 1200) {
     window.clearTimeout(state.articleJobTimers[type]);
-    state.articleJobTimers[type] = window.setTimeout(() => pollArticleJob(type, id), 1200);
+    state.articleJobTimers[type] = window.setTimeout(() => pollArticleJob(type, id), delay);
   }
 
   async function pollArticleJob(type, id) {
     try {
       const before = type === "generate" ? state.generationJob : state.publishJob;
       const job = await api(`/article-jobs/${id}`);
+      state.articleJobPollFailures[type] = 0;
       renderArticleJob(type, job);
       if (!before || before.completed_count !== job.completed_count) await loadArticles(true);
       if (activeArticleJobStatuses.has(job.status)) return scheduleArticleJobPoll(type, id);
       await loadAccounts(true);
       toast(`${type === "generate" ? "文章生成" : "文章发布"}${articleJobStatusLabels[job.status]}：成功 ${job.success_count} 篇，失败 ${job.failed_count} 篇`, job.failed_count || job.status === "failed" ? "error" : "success");
-    } catch (error) { toast(error.message, "error"); }
+    } catch (error) {
+      const job = type === "generate" ? state.generationJob : state.publishJob;
+      state.articleJobPollFailures[type] += 1;
+      const failures = state.articleJobPollFailures[type];
+      const prefix = type === "generate" ? "article-generation" : "article-publish";
+      const current = $(`#${prefix}-current`);
+      if (current) current.textContent = `进度连接暂时中断，正在自动重试（第 ${failures} 次）：${error.message}`;
+      if (failures === 1 || failures % 10 === 0) toast(`进度读取失败，系统会自动重试：${error.message}`, "error");
+      if (job && job.id === id && activeArticleJobStatuses.has(job.status)) scheduleArticleJobPoll(type, id, 3000);
+    }
   }
 
   async function loadLatestArticleJob(type) {

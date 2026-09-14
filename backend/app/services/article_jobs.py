@@ -22,6 +22,7 @@ from app.models.product import PromotedProduct
 from app.models.system_setting import SystemSetting
 from app.models.user_ai_provider import UserAIProviderConfig
 from app.services.ai_providers import (
+    ARTICLE_GENERATION_DEADLINE_SECONDS,
     AIProviderError,
     PROVIDERS,
     generate_article_content,
@@ -237,7 +238,11 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
         async with SessionLocal() as db:
             job = await db.get(ArticleJob, job_id)
             job.status = ArticleJobStatus.running
-            job.current_item = f"生成：{keyword.keyword}（{index + 1}/{len(specs)}）"
+            job.current_item = (
+                f"{definition.display_name} 正在生成：{keyword.keyword}"
+                f"（{index + 1}/{len(specs)}，单篇最长 "
+                f"{ARTICLE_GENERATION_DEADLINE_SECONDS} 秒）"
+            )
             await db.commit()
 
         title_instruction = _expand_prompt(

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import time
@@ -16,6 +17,11 @@ class ProviderDefinition:
 
 class AIProviderError(RuntimeError):
     pass
+
+
+# httpx 的 read timeout 是“连续无数据”的超时；若上游持续发送少量数据，
+# 它可能一直不触发。另设整次调用的墙钟上限，保证后台任务一定会结束。
+ARTICLE_GENERATION_DEADLINE_SECONDS = 150
 
 
 PROVIDERS: dict[str, ProviderDefinition] = {
@@ -138,23 +144,31 @@ async def generate_article_content(
         f"正文字数范围：{min_length} 至 {max_length} 个中文字符。"
     )
     try:
-        async with httpx.AsyncClient(timeout=120, follow_redirects=False) as client:
-            response = await client.post(
-                f"{definition.base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "stream": False,
-                    "temperature": 0.8,
-                },
-            )
+        async with asyncio.timeout(ARTICLE_GENERATION_DEADLINE_SECONDS):
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=15, read=120, write=30, pool=15),
+                follow_redirects=False,
+            ) as client:
+                response = await client.post(
+                    f"{definition.base_url.rstrip('/')}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "stream": False,
+                        "temperature": 0.8,
+                    },
+                )
+    except TimeoutError as exc:
+        raise AIProviderError(
+            f"AI 平台生成文章超过 {ARTICLE_GENERATION_DEADLINE_SECONDS} 秒，已自动终止；请稍后重试或更换模型"
+        ) from exc
     except httpx.TimeoutException as exc:
         raise AIProviderError("AI 平台响应超时") from exc
     except httpx.HTTPError as exc:

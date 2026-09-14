@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.18.4"
+        assert version.json()["version"] == "0.18.5"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -71,6 +71,8 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert 'id="article-sync"' in index
     assert "syncPublishedArticles" in script
     assert "/articles/sync" in script
+    assert "进度连接暂时中断，正在自动重试" in script
+    assert "articleJobPollFailures" in script
 
 
 def test_qa_pages_are_functional_modules() -> None:

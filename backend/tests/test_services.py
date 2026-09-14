@@ -6,7 +6,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app.services.ai_providers import AIProviderError, _extract_article_json
+from app.services import ai_providers
+from app.services.ai_providers import (
+    AIProviderError,
+    ProviderDefinition,
+    _extract_article_json,
+    generate_article_content,
+)
 from app.services.keyword_collector import (
     is_verification_page,
     normalize_keyword,
@@ -64,6 +70,45 @@ def test_article_json_parser_accepts_plain_and_fenced_json() -> None:
 def test_article_json_parser_rejects_incomplete_result() -> None:
     with pytest.raises(AIProviderError):
         _extract_article_json('{"title":"只有标题"}')
+
+
+def test_article_generation_has_wall_clock_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_async_client = httpx.AsyncClient
+
+    async def never_finishes(_: httpx.Request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    def client_factory(**kwargs):
+        return real_async_client(
+            transport=httpx.MockTransport(never_finishes),
+            timeout=kwargs.get("timeout"),
+            follow_redirects=kwargs.get("follow_redirects", False),
+        )
+
+    monkeypatch.setattr(ai_providers, "ARTICLE_GENERATION_DEADLINE_SECONDS", 0.01)
+    monkeypatch.setattr(ai_providers.httpx, "AsyncClient", client_factory)
+    definition = ProviderDefinition(
+        provider="test",
+        display_name="测试平台",
+        base_url="https://example.invalid/v1",
+        models=("test-model",),
+    )
+
+    with pytest.raises(AIProviderError, match="已自动终止"):
+        asyncio.run(
+            generate_article_content(
+                definition,
+                "test-key",
+                "test-model",
+                title_instruction="生成标题",
+                content_instruction="生成正文",
+                min_length=100,
+                max_length=200,
+            )
+        )
 
 
 def test_keyword_normalization_and_baidu_parser() -> None:
