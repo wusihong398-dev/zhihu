@@ -11,7 +11,7 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.18.2";
+    const string AppVersion = "0.18.3";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
@@ -257,11 +257,16 @@ internal sealed class MainForm : Form
               ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
               if (!editor) return 'editor-missing';
               const form = editor.closest('.AnswerForm') || editor.parentElement?.parentElement?.parentElement;
-              if (!form) return 'form-missing';
-              const buttons = [...form.querySelectorAll('button,[role="button"]')].filter(visible);
               const preferred = ['发布回答', '提交回答'];
-              const button = buttons.find(e => preferred.includes(text(e))) || buttons.find(e => text(e) === '发布');
-              if (!button) return 'publish-missing';
+              const pageButtons = [...document.querySelectorAll('button,[role="button"],a')].filter(visible);
+              const formButtons = form ? [...form.querySelectorAll('button,[role="button"],a')].filter(visible) : [];
+              const button = pageButtons.find(e => preferred.includes(text(e))) ||
+                             pageButtons.find(e => preferred.some(label => text(e).includes(label))) ||
+                             formButtons.find(e => text(e) === '发布');
+              if (!button) {
+                const labels = pageButtons.map(text).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 25);
+                return 'publish-missing:' + labels.join('|').slice(0, 400);
+              }
               if (button.disabled || button.getAttribute('aria-disabled') === 'true') return 'publish-disabled';
               button.scrollIntoView({block: 'center', inline: 'center'});
               button.click();
@@ -269,7 +274,7 @@ internal sealed class MainForm : Form
             })()
             """);
             if (clicked == "publish-disabled") throw new Exception("“发布回答”按钮不可用，请检查回答内容");
-            if (clicked != "clicked") throw new Exception("回答编辑器已打开，但未找到表单内可用的“发布回答”按钮");
+            if (clicked != "clicked") throw new Exception("回答编辑器已打开，但未找到页面右下角可用的“发布回答”按钮；页面按钮：" + clicked.Replace("publish-missing:", ""));
 
             for (var i=0;i<40;i++) {
                 await Task.Delay(500);

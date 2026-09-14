@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.18.2"
+        assert version.json()["version"] == "0.18.3"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
