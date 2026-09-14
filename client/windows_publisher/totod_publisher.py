@@ -23,7 +23,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 
-APP_VERSION = "0.17.3"
+APP_VERSION = "0.17.4"
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "TOTODPublisher"
 CONFIG_PATH = APP_DIR / "config.json"
 PROFILE_DIR = APP_DIR / "profiles"
@@ -158,6 +158,7 @@ class PublisherWorker(threading.Thread):
         self.commands = commands
         self.events = events
         self.running = False
+        self.auto_start_account_id = ""
         self.server = ""
         self.token = ""
         self.account_id = ""
@@ -176,6 +177,7 @@ class PublisherWorker(threading.Thread):
             self.playwright = sync_playwright().start()
             while not self.stopping:
                 self.handle_commands()
+                self.try_auto_start()
                 if self.running and self.account_id:
                     self.poll_once()
                 time.sleep(1.5)
@@ -201,10 +203,16 @@ class PublisherWorker(threading.Thread):
                 self.server, self.token = payload
                 self.load_accounts()
             elif command == "login":
+                self.running = False
+                self.account_id = ""
+                self.auto_start_account_id = payload
+                self.emit("listening", False)
                 self.open_login(payload)
             elif command == "start":
                 self.running = False
                 self.account_id = ""
+                self.auto_start_account_id = ""
+                self.emit("listening", False)
                 try:
                     # The UI and worker live on different threads.  Refresh and
                     # retain the worker's own account snapshot before validating
@@ -227,11 +235,16 @@ class PublisherWorker(threading.Thread):
                     account_name = account.get("display_name") or payload[:8]
                     self.emit("log", f"开始监听账号：{account_name}（{payload[:8]}）")
                     self.emit("status", f"运行中：正在等待 {account_name} 的发布任务")
+                    self.emit("listening", True)
                 except Exception as exc:
                     self.running = False
+                    self.emit("listening", False)
                     self.emit("error", str(exc))
             elif command == "stop":
                 self.running = False
+                self.account_id = ""
+                self.auto_start_account_id = ""
+                self.emit("listening", False)
                 self.emit("status", "已停止监听")
             elif command == "quit":
                 self.stopping = True
@@ -280,6 +293,38 @@ class PublisherWorker(threading.Thread):
         self.contexts[account_id] = context
         return context
 
+    def try_auto_start(self):
+        """Start polling as soon as the account opened for login has a Zhihu session."""
+        account_id = self.auto_start_account_id
+        if not account_id or self.running:
+            return
+        context = self.contexts.get(account_id)
+        if context is None or not self.is_logged_in(context):
+            return
+        self.auto_start_account_id = ""
+        try:
+            if not self.load_accounts():
+                return
+            account = next(
+                (item for item in self.accounts if item["id"] == account_id), None
+            )
+            if not account or account.get("answer_publish_mode") != "local":
+                raise RuntimeError(
+                    "该账号尚未启用本地发布，请在 TOTOD 后台编辑账号，"
+                    "将回答发布方式改为“Windows 本地客户端”"
+                )
+            self.account_id = account_id
+            self.running = True
+            account_name = account.get("display_name") or account_id[:8]
+            self.emit("log", f"知乎登录已确认，自动开始监听账号：{account_name}（{account_id[:8]}）")
+            self.emit("status", f"运行中：正在等待 {account_name} 的发布任务")
+            self.emit("listening", True)
+        except Exception as exc:
+            self.running = False
+            self.account_id = ""
+            self.emit("listening", False)
+            self.emit("error", str(exc))
+
     @staticmethod
     def is_logged_in(context):
         return any(cookie.get("name") == "z_c0" for cookie in context.cookies())
@@ -290,7 +335,10 @@ class PublisherWorker(threading.Thread):
             page = context.pages[0] if context.pages else context.new_page()
             page.bring_to_front()
             page.goto("https://www.zhihu.com/", wait_until="domcontentloaded", timeout=60000)
-            self.emit("status", "知乎已在独立浏览器窗口打开；请登录后保持窗口开启")
+            if self.is_logged_in(context):
+                self.emit("status", "知乎登录已确认，正在自动启动任务监听…")
+            else:
+                self.emit("status", "请在浏览器中登录知乎；登录成功后将自动开始监听")
         except Exception as exc:
             self.emit("error", f"打开浏览器失败：{exc}")
 
@@ -443,13 +491,19 @@ class App:
         row.pack(fill="x", pady=(5, 10))
         self.account = ttk.Combobox(row, state="readonly")
         self.account.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ttk.Button(row, text="登录所选账号", command=self.login).pack(side="left", padx=(0, 8))
+        ttk.Button(row, text="登录并自动监听", command=self.login).pack(side="left", padx=(0, 8))
         ttk.Button(row, text="刷新账号", command=self.connect).pack(side="left")
         controls = ttk.Frame(root)
         controls.pack(fill="x", pady=(0, 12))
         self.start_button = ttk.Button(controls, text="开始监听发布任务", command=self.start)
         self.start_button.pack(side="left", padx=(0, 8))
-        ttk.Button(controls, text="停止监听", command=lambda: self.commands.put(("stop", None))).pack(side="left")
+        self.stop_button = ttk.Button(
+            controls,
+            text="停止监听",
+            command=lambda: self.commands.put(("stop", None)),
+            state="disabled",
+        )
+        self.stop_button.pack(side="left")
         self.status = tk.StringVar(value="请先填写服务器地址和设备密钥")
         ttk.Label(root, textvariable=self.status, foreground="#147a65").pack(anchor="w", pady=(0, 8))
         ttk.Label(root, text="运行日志").pack(anchor="w")
@@ -522,6 +576,12 @@ class App:
                 self.append_log(f"错误：{value}")
             elif kind == "log":
                 self.append_log(value)
+            elif kind == "listening":
+                self.start_button.configure(
+                    text="正在监听发布任务" if value else "开始监听发布任务",
+                    state="disabled" if value else "normal",
+                )
+                self.stop_button.configure(state="normal" if value else "disabled")
         self.root.after(200, self.process_events)
 
     def append_log(self, value):

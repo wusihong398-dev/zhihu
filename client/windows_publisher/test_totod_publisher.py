@@ -55,6 +55,36 @@ class PublisherWorkerTests(unittest.TestCase):
             any(kind == "log" and "开始监听账号：qwg2" in value for kind, value in events)
         )
 
+    def test_login_auto_starts_listener_after_session_is_detected(self):
+        account_id = "5c3c1549-0000-0000-0000-000000000000"
+        accounts = [
+            {
+                "id": account_id,
+                "display_name": "qwg2",
+                "answer_publish_mode": "local",
+            }
+        ]
+        context = object()
+        self.worker.contexts[account_id] = context
+        self.worker.auto_start_account_id = account_id
+
+        with (
+            patch("totod_publisher.api_request", return_value=accounts),
+            patch.object(self.worker, "is_logged_in", return_value=True),
+        ):
+            self.worker.try_auto_start()
+
+        self.assertTrue(self.worker.running)
+        self.assertEqual(self.worker.account_id, account_id)
+        self.assertEqual(self.worker.auto_start_account_id, "")
+        events = []
+        while not self.events.empty():
+            events.append(self.events.get_nowait())
+        self.assertIn(("listening", True), events)
+        self.assertTrue(
+            any(kind == "log" and "自动开始监听账号：qwg2" in value for kind, value in events)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
