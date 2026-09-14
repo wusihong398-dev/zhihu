@@ -48,7 +48,10 @@ internal sealed class MainForm : Form
     void LoadConfig()
     {
         try {
-            var cfg = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(appDir, "config.json")))!;
+            var newConfig = Path.Combine(appDir, "config.json");
+            var oldConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODPublisher", "config.json");
+            var configPath = File.Exists(newConfig) ? newConfig : oldConfig;
+            var cfg = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(configPath))!;
             server.Text = cfg.GetValueOrDefault("server", server.Text); token.Text = cfg.GetValueOrDefault("token", "");
             if (token.Text.Length > 0) Shown += async (_, _) => await ConnectAsync();
         } catch { }
