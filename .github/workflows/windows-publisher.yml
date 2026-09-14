@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "client/windows_publisher/**"
+      - "client/webview2_publisher/**"
       - ".github/workflows/windows-publisher.yml"
 
 jobs:
