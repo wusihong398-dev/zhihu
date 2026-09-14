@@ -23,6 +23,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 
+APP_VERSION = "0.17.3"
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "TOTODPublisher"
 CONFIG_PATH = APP_DIR / "config.json"
 PROFILE_DIR = APP_DIR / "profiles"
@@ -111,7 +112,7 @@ def api_request(server: str, token: str, path: str, method: str = "GET", body=No
         headers={
             "X-TOTOD-Device-Token": token,
             "Content-Type": "application/json",
-            "User-Agent": "TOTOD-Windows-Publisher/1.0",
+            "User-Agent": f"TOTOD-Windows-Publisher/{APP_VERSION}",
         },
     )
     try:
@@ -160,6 +161,7 @@ class PublisherWorker(threading.Thread):
         self.server = ""
         self.token = ""
         self.account_id = ""
+        self.accounts = []
         self.contexts = {}
         self.playwright = None
         self.stopping = False
@@ -201,8 +203,14 @@ class PublisherWorker(threading.Thread):
             elif command == "login":
                 self.open_login(payload)
             elif command == "start":
-                self.account_id = payload
+                self.running = False
+                self.account_id = ""
                 try:
+                    # The UI and worker live on different threads.  Refresh and
+                    # retain the worker's own account snapshot before validating
+                    # the selected account; otherwise the listener never starts.
+                    if not self.load_accounts():
+                        continue
                     account = next(
                         (item for item in self.accounts if item["id"] == payload), None
                     )
@@ -214,9 +222,13 @@ class PublisherWorker(threading.Thread):
                     context = self.ensure_context(payload)
                     if not self.is_logged_in(context):
                         raise RuntimeError("该账号尚未在本地 Edge 登录知乎，请先点击“登录所选账号”")
+                    self.account_id = payload
                     self.running = True
-                    self.emit("status", "运行中：正在等待发布任务")
+                    account_name = account.get("display_name") or payload[:8]
+                    self.emit("log", f"开始监听账号：{account_name}（{payload[:8]}）")
+                    self.emit("status", f"运行中：正在等待 {account_name} 的发布任务")
                 except Exception as exc:
+                    self.running = False
                     self.emit("error", str(exc))
             elif command == "stop":
                 self.running = False
@@ -226,7 +238,10 @@ class PublisherWorker(threading.Thread):
 
     def load_accounts(self):
         try:
-            accounts = api_request(self.server, self.token, "/local-publisher/client/accounts")
+            accounts = api_request(
+                self.server, self.token, "/local-publisher/client/accounts"
+            ) or []
+            self.accounts = accounts
             self.emit("accounts", accounts)
             local_count = sum(
                 item.get("answer_publish_mode") == "local" for item in accounts
@@ -235,8 +250,11 @@ class PublisherWorker(threading.Thread):
                 "status",
                 f"已连接服务器，共 {len(accounts)} 个账号，其中本地发布 {local_count} 个",
             )
+            return True
         except Exception as exc:
+            self.accounts = []
             self.emit("error", str(exc))
+            return False
 
     def ensure_context(self, account_id):
         context = self.contexts.get(account_id)
@@ -391,7 +409,7 @@ class App:
         APP_DIR.mkdir(parents=True, exist_ok=True)
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         self.root = tk.Tk()
-        self.root.title("TOTOD Windows 本地发布客户端")
+        self.root.title(f"TOTOD Windows 本地发布客户端 v{APP_VERSION}")
         self.root.geometry("760x620")
         self.commands = queue.Queue()
         self.events = queue.Queue()
@@ -406,7 +424,7 @@ class App:
     def build_ui(self):
         root = ttk.Frame(self.root, padding=18)
         root.pack(fill="both", expand=True)
-        ttk.Label(root, text="TOTOD 本地发布客户端", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(root, text=f"TOTOD 本地发布客户端 v{APP_VERSION}", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
         ttk.Label(root, text="使用本机 Edge、常用网络和账号独立资料发布知乎回答").pack(anchor="w", pady=(2, 16))
         form = ttk.Frame(root)
         form.pack(fill="x")
@@ -483,6 +501,7 @@ class App:
             except queue.Empty:
                 break
             if kind == "accounts":
+                selected_id = self.selected_id()
                 self.accounts = value
                 self.account["values"] = [
                     f"{item['display_name']}  "
@@ -491,7 +510,11 @@ class App:
                     for item in value
                 ]
                 if value:
-                    self.account.current(0)
+                    selected_index = next(
+                        (index for index, item in enumerate(value) if item["id"] == selected_id),
+                        0,
+                    )
+                    self.account.current(selected_index)
             elif kind == "status":
                 self.status.set(value)
             elif kind == "error":

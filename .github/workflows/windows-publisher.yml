@@ -21,6 +21,9 @@ jobs:
       - name: Verify installed browser detection
         working-directory: client/windows_publisher
         run: python -c "from totod_publisher import find_supported_browser; browser = find_supported_browser(); assert browser, 'Edge or Chrome was not detected'; print(browser)"
+      - name: Test publisher listener
+        working-directory: client/windows_publisher
+        run: python -m unittest -v test_totod_publisher.py
       - name: Build executable
         working-directory: client/windows_publisher
         run: pyinstaller --noconfirm --clean --onefile --windowed --name TOTOD-Windows-Publisher --collect-all playwright totod_publisher.py
