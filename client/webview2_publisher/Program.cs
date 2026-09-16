@@ -377,7 +377,7 @@ internal sealed class MainForm : Form
               editor.dispatchEvent(new Event('change', {bubbles: true}));
               return title.value.trim() && (editor.innerText || '').trim() ? 'filled' : 'empty';
             })()
-            """).Replace("TITLE", titleJson).Replace("CONTENT", contentJson));
+            """.Replace("TITLE", titleJson).Replace("CONTENT", contentJson));
         }
         if (filled != "filled") throw new Exception("知乎文章创作页未找到标题或正文编辑器");
         AddLog("文章标题和正文已填写");
