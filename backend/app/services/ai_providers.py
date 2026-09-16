@@ -162,7 +162,6 @@ async def generate_article_content(
                             {"role": "user", "content": user_prompt},
                         ],
                         "stream": False,
-                        "temperature": 0.8,
                     },
                 )
     except TimeoutError as exc:
@@ -226,7 +225,6 @@ async def generate_answer_content(
                         {"role": "user", "content": user_prompt},
                     ],
                     "stream": False,
-                    "temperature": 0.7,
                 },
             )
     except httpx.TimeoutException as exc:

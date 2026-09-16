@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from app.services.ai_providers import (
     AIProviderError,
     ProviderDefinition,
     _extract_article_json,
+    generate_answer_content,
     generate_article_content,
 )
 from app.services.keyword_collector import (
@@ -120,6 +122,67 @@ def test_article_job_failure_details_are_appended() -> None:
         "• 脱发怎么办：AI 平台响应超时\n"
         "• 如何防脱：正文仅 80 字"
     )
+
+
+def test_generation_requests_omit_model_incompatible_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_async_client = httpx.AsyncClient
+    request_payloads = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        request_payloads.append(json.loads(request.content))
+        content = (
+            '{"title":"测试标题","content":"测试正文"}'
+            if len(request_payloads) == 1
+            else '{"content":"测试回答"}'
+        )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": content}}]},
+        )
+
+    def client_factory(**kwargs):
+        return real_async_client(
+            transport=httpx.MockTransport(respond),
+            timeout=kwargs.get("timeout"),
+            follow_redirects=kwargs.get("follow_redirects", False),
+        )
+
+    monkeypatch.setattr(ai_providers.httpx, "AsyncClient", client_factory)
+    definition = ProviderDefinition(
+        provider="volcengine",
+        display_name="火山方舟",
+        base_url="https://example.invalid/v1",
+        models=("doubao-seed-2-1-pro-260628",),
+    )
+
+    asyncio.run(
+        generate_article_content(
+            definition,
+            "test-key",
+            definition.models[0],
+            title_instruction="生成标题",
+            content_instruction="生成正文",
+            min_length=100,
+            max_length=200,
+        )
+    )
+    asyncio.run(
+        generate_answer_content(
+            definition,
+            "test-key",
+            definition.models[0],
+            question_title="测试问题",
+            question_excerpt="",
+            instruction="生成回答",
+            min_length=100,
+            max_length=200,
+        )
+    )
+
+    assert len(request_payloads) == 2
+    assert all("temperature" not in payload for payload in request_payloads)
 
 
 def test_keyword_normalization_and_baidu_parser() -> None:
