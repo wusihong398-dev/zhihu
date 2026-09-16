@@ -19,7 +19,7 @@
 .article-job-panel .job-status-row > span { color: #91a4bf; font-size: .8rem; }
 .article-job-panel .progress-track { margin: 16px 0; }
 .article-job-panel > p { margin: 8px 0; color: #91a4bf; font-size: .78rem; }
-.article-job-panel .job-message { color: #ff9cad; }
+.article-job-panel .job-message { color: #ff9cad; white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .job-controls { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .job-controls .button { height: 36px; font-size: .72rem; }
 .article-content-toolbar { grid-template-columns: minmax(280px, 1fr) 230px auto; }

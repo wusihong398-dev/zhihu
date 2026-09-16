@@ -255,7 +255,22 @@
       toast(error.message, "error");
     }
   }
-  function updateAnswerSelection() { const count = state.selectedAnswers.size; $("#answer-selected-count").textContent = `已选 ${count} 个`; ["#answer-publish-selected", "#answer-mark-ready", "#answer-delete-selected"].forEach((id) => $(id).disabled = !count); const visible = state.answers.items.map((item) => item.id); $("#answer-select-all").checked = visible.length > 0 && visible.every((id) => state.selectedAnswers.has(id)); }
+  function updateAnswerSelection() {
+    const count = state.selectedAnswers.size;
+    $("#answer-selected-count").textContent = `已选 ${count} 个`;
+    ["#answer-publish-selected", "#answer-mark-ready", "#answer-delete-selected"].forEach((id) => $(id).disabled = !count);
+    const visible = state.answers.items.map((item) => item.id);
+    const selectedVisible = visible.filter((id) => state.selectedAnswers.has(id)).length;
+    ["#answer-select-all", "#answer-select-all-table"].forEach((id) => {
+      const checkbox = $(id);
+      checkbox.checked = visible.length > 0 && selectedVisible === visible.length;
+      checkbox.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+    });
+  }
+  function selectVisibleAnswers(checked) {
+    state.answers.items.forEach((item) => checked ? state.selectedAnswers.add(item.id) : state.selectedAnswers.delete(item.id));
+    renderAnswers();
+  }
 
   function openAnswerDialog(id) { const item = state.answers.items.find((answer) => answer.id === id); if (!item) return; state.editingAnswer = item; $("#answer-edit-question").textContent = item.question_title; $("#answer-edit-question").href = item.question_url; $("#answer-edit-content").value = item.content; $("#answer-edit-status").value = item.status === "published" ? "draft" : item.status; $("#answer-edit-status").disabled = item.status === "published"; $("#answer-edit-length").textContent = `${item.content.replace(/\s/g, "").length} 字`; $("#answer-edit-error").textContent = item.error_message || ""; $("#answer-dialog").hidden = false; }
   function closeAnswerDialog() { $("#answer-dialog").hidden = true; state.editingAnswer = null; }
@@ -300,7 +315,7 @@
     $("#answer-list-account").addEventListener("change", async () => { state.answerPage = 1; state.selectedAnswers.clear(); await loadAnswers(true); await loadLatestPublish($("#answer-list-account").value); });
     $("#answer-search").addEventListener("input", () => { clearTimeout(state.answerSearchTimer); state.answerSearchTimer = setTimeout(() => { state.answerPage = 1; loadAnswers(true); }, 300); });
     $$("[data-answer-status]").forEach((button) => button.addEventListener("click", () => { $$("[data-answer-status]").forEach((item) => item.classList.toggle("active", item === button)); state.answerStatus = button.dataset.answerStatus; state.answerPage = 1; state.selectedAnswers.clear(); $$(".nav-item[data-page='answers']").forEach((item) => item.classList.toggle("active", item.dataset.answerStatus === state.answerStatus)); const title = $("#page-title"); if (title) title.textContent = ({ draft: "草稿回答", ready: "待发布回答", published: "已发布回答", failed: "发布失败回答" })[state.answerStatus]; loadAnswers(true); }));
-    $("#answer-select-all").addEventListener("change", (event) => { state.answers.items.forEach((item) => event.target.checked ? state.selectedAnswers.add(item.id) : state.selectedAnswers.delete(item.id)); renderAnswers(); });
+    ["#answer-select-all", "#answer-select-all-table"].forEach((id) => $(id).addEventListener("change", (event) => selectVisibleAnswers(event.target.checked)));
     $("#answer-publish-selected").addEventListener("click", () => startPublish([...state.selectedAnswers])); $("#answer-mark-ready").addEventListener("click", () => bulkAnswer("bulk-status", { answer_ids: [...state.selectedAnswers], status: "ready" }, "已转入待发布")); $("#answer-delete-selected").addEventListener("click", () => { if (confirm(`确定删除所选 ${state.selectedAnswers.size} 个回答吗？`)) bulkAnswer("bulk-delete", { answer_ids: [...state.selectedAnswers] }, "所选回答已删除"); });
     $("#answer-prev").addEventListener("click", () => { state.answerPage--; loadAnswers(true); }); $("#answer-next").addEventListener("click", () => { state.answerPage++; loadAnswers(true); });
     $("#answer-dialog-close").addEventListener("click", closeAnswerDialog); $("#answer-dialog-cancel").addEventListener("click", closeAnswerDialog); $("#answer-edit-form").addEventListener("submit", saveAnswer); $("#answer-edit-content").addEventListener("input", () => $("#answer-edit-length").textContent = `${$("#answer-edit-content").value.replace(/\s/g, "").length} 字`);

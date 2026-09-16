@@ -1651,6 +1651,9 @@
     if (type === "generate") {
       state.generationJob = job;
       renderJobAt("article-generation", job, $("#article-generation-job"));
+      const failureButton = $("#article-generation-view-failures");
+      failureButton.hidden = !(job && job.failed_count > 0);
+      if (!failureButton.hidden) failureButton.textContent = `查看 ${job.failed_count} 篇失败文章`;
       $("#article-generate-submit").disabled = Boolean(job && activeArticleJobStatuses.has(job.status));
       if (job) $("#article-generate-progress").textContent = `${articleJobStatusLabels[job.status]}：${job.progress_percent}%`;
       return;
@@ -2060,6 +2063,13 @@
     $("#article-generation-pause").addEventListener("click", () => controlArticleJob("generate", "pause"));
     $("#article-generation-resume").addEventListener("click", () => controlArticleJob("generate", "resume"));
     $("#article-generation-stop").addEventListener("click", () => controlArticleJob("generate", "stop"));
+    $("#article-generation-view-failures").addEventListener("click", () => {
+      const accountId = state.generationJob?.account_id;
+      if (accountId && state.accounts.some((item) => item.id === accountId)) $("#article-account-filter").value = accountId;
+      state.articlePage = 1;
+      state.selectedArticles.clear();
+      navigate("articles", { articleStatus: "failed" });
+    });
     $("#article-account-filter").addEventListener("change", () => { state.articlePage = 1; state.selectedArticles.clear(); loadArticles(true); });
     $("#article-sync").addEventListener("click", syncPublishedArticles);
     $$('[data-status]').forEach((button) => button.addEventListener("click", () => {

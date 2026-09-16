@@ -47,6 +47,7 @@ from app.services.zhihu_question_collector import questions_from_search_payload
 from app.api.articles import _job_read
 from app.models.article_job import ArticleJobStatus, ArticleJobType
 from app.models.keyword import AccountKeyword, KeywordSource
+from app.services.article_jobs import _append_job_failure
 
 
 def test_secret_round_trip() -> None:
@@ -109,6 +110,16 @@ def test_article_generation_has_wall_clock_deadline(
                 max_length=200,
             )
         )
+
+
+def test_article_job_failure_details_are_appended() -> None:
+    job = SimpleNamespace(error_message=None)
+    _append_job_failure(job, "脱发怎么办", "AI 平台响应超时")
+    _append_job_failure(job, "如何防脱", "正文仅 80 字")
+    assert job.error_message == (
+        "• 脱发怎么办：AI 平台响应超时\n"
+        "• 如何防脱：正文仅 80 字"
+    )
 
 
 def test_keyword_normalization_and_baidu_parser() -> None:

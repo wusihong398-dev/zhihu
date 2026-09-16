@@ -128,7 +128,14 @@ async def _begin_job(job_id: uuid.UUID) -> ArticleJob | None:
         if job is None or job.status in _terminal_statuses:
             return None
         job.status = ArticleJobStatus.running
-        job.error_message = None
+        # 服务重启后继续任务时保留已经生成的逐篇失败明细，同时清除
+        # “服务重启后已暂停”等临时状态提示。
+        failure_lines = [
+            line
+            for line in (job.error_message or "").splitlines()
+            if line.startswith("• ")
+        ]
+        job.error_message = "\n".join(failure_lines) or None
         await db.commit()
         return job
 
@@ -148,15 +155,22 @@ async def run_article_job(job_id: uuid.UUID) -> None:
         await _set_failed(job_id, f"任务执行失败：{exc}")
 
 
+def _append_job_failure(job: ArticleJob, label: str, reason: str | None) -> None:
+    detail = f"• {label}：{reason or '系统没有返回具体原因'}"
+    existing = (job.error_message or "").strip()
+    combined = f"{existing}\n{detail}" if existing else detail
+    job.error_message = combined[:8000]
+
+
 async def _finish_if_active(job: ArticleJob) -> None:
     if job.status not in _terminal_statuses:
         job.status = ArticleJobStatus.completed
         job.current_item = None
         job.completed_at = datetime.now(UTC)
         if job.failed_count:
-            job.error_message = (
-                f"任务已完成，其中 {job.failed_count} 篇失败；请在文章列表查看原因"
-            )
+            summary = f"任务已完成，其中 {job.failed_count} 篇失败。失败明细："
+            details = (job.error_message or "").strip()
+            job.error_message = f"{summary}\n{details}" if details else summary
 
 
 def _expand_prompt(template: str, keyword: str, product: PromotedProduct) -> str:
@@ -358,6 +372,11 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
             current_job.completed_count += 1
             if article.status == ArticleStatus.failed:
                 current_job.failed_count += 1
+                _append_job_failure(
+                    current_job,
+                    keyword.keyword,
+                    article.error_message,
+                )
             else:
                 current_job.success_count += 1
             await db.commit()

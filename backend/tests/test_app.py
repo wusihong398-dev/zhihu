@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.18.5"
+        assert version.json()["version"] == "0.18.6"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -73,6 +73,8 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert "/articles/sync" in script
     assert "进度连接暂时中断，正在自动重试" in script
     assert "articleJobPollFailures" in script
+    assert 'id="article-generation-view-failures"' in index
+    assert 'articleStatus: "failed"' in script
 
 
 def test_qa_pages_are_functional_modules() -> None:
@@ -100,6 +102,8 @@ def test_qa_pages_are_functional_modules() -> None:
     assert "采集时间" in script
     assert "item.discovered_at" in script
     assert "回答时间 / 尝试时间" in script
+    assert 'id="answer-select-all-table"' in index
+    assert "selectVisibleAnswers" in script
     assert 'item.status === "published" ? item.published_at' in script
     assert "finishedJob?.failed_count" in script
     assert 'accounts = await api("/accounts")' in script
