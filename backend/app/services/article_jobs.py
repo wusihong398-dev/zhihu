@@ -35,6 +35,7 @@ from app.services.local_media import (
     insert_local_image,
     text_content_length,
 )
+from app.services.local_publisher import enqueue_local_article_tasks
 from app.services.zhihu_publisher import (
     ZhihuLoginRequired,
     ZhihuPublishError,
@@ -242,6 +243,10 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
             for _ in range(payload["articles_per_keyword"])
         ]
         completed_at_start = job.completed_count
+        generation_user_id = job.user_id
+        generation_account_id = account.id
+
+    local_publish_ids: list[uuid.UUID] = []
 
     for index, (keyword, local_image) in enumerate(
         specs[completed_at_start:], start=completed_at_start
@@ -335,7 +340,9 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
             article.local_image_id = local_image.id if local_image else None
             article.content = insert_local_image(content, local_image)
 
-        if article.status == ArticleStatus.ready:
+        if article.status == ArticleStatus.ready and account.answer_publish_mode == "local":
+            local_publish_ids.append(article.id)
+        elif article.status == ArticleStatus.ready:
             if not account.enabled:
                 article.status = ArticleStatus.failed
                 article.error_message = "知乎账号已停用，文章未发布"
@@ -384,6 +391,20 @@ async def _run_generation_job(job_id: uuid.UUID) -> None:
     async with SessionLocal() as db:
         job = await db.get(ArticleJob, job_id)
         await _finish_if_active(job)
+        if local_publish_ids:
+            publish_job = ArticleJob(
+                user_id=generation_user_id,
+                account_id=generation_account_id,
+                job_type=ArticleJobType.publish,
+                status=ArticleJobStatus.pending,
+                total_count=len(local_publish_ids),
+                payload_json=json.dumps(
+                    {"article_ids": [str(value) for value in local_publish_ids]},
+                    ensure_ascii=False,
+                ),
+            )
+            db.add(publish_job)
+            await enqueue_local_article_tasks(publish_job, local_publish_ids, db)
         await db.commit()
 
 

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,12 +34,17 @@ class LocalPublisherAccountRead(BaseModel):
 class LocalPublisherTaskRead(BaseModel):
     id: uuid.UUID
     job_id: uuid.UUID
-    answer_id: uuid.UUID
+    task_type: Literal["answer", "article"]
+    answer_id: uuid.UUID | None = None
+    article_id: uuid.UUID | None = None
     account_id: uuid.UUID
     account_name: str
-    question_title: str
-    question_url: str
+    question_title: str | None = None
+    question_url: str | None = None
+    article_title: str | None = None
+    target_url: str | None = None
     content: str
+    image_url: str | None = None
     attempt_count: int
     lease_expires_at: datetime
 

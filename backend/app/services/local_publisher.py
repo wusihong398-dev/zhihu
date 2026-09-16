@@ -5,7 +5,8 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer_job import AnswerJob, AnswerJobStatus
-from app.models.local_publisher import LocalAnswerPublishTask
+from app.models.article_job import ArticleJob, ArticleJobStatus
+from app.models.local_publisher import LocalAnswerPublishTask, LocalArticlePublishTask
 
 
 def create_device_token() -> tuple[str, str]:
@@ -46,3 +47,32 @@ async def job_has_local_tasks(job_id: uuid.UUID, db: AsyncSession) -> bool:
     )
     return bool(count)
 
+
+async def enqueue_local_article_tasks(
+    job: ArticleJob,
+    article_ids: list[uuid.UUID],
+    db: AsyncSession,
+) -> None:
+    await db.flush()
+    for article_id in article_ids:
+        db.add(
+            LocalArticlePublishTask(
+                job_id=job.id,
+                user_id=job.user_id,
+                account_id=job.account_id,
+                article_id=article_id,
+            )
+        )
+    job.status = ArticleJobStatus.pending
+    job.current_item = "等待 Windows 本地发布客户端领取文章任务"
+
+
+async def article_job_has_local_tasks(job_id: uuid.UUID, db: AsyncSession) -> bool:
+    from sqlalchemy import func, select
+
+    count = await db.scalar(
+        select(func.count(LocalArticlePublishTask.id)).where(
+            LocalArticlePublishTask.job_id == job_id
+        )
+    )
+    return bool(count)

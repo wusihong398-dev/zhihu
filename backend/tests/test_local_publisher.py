@@ -154,5 +154,60 @@ def test_local_publisher_device_claim_and_success_result(monkeypatch) -> None:
             assert client.get(
                 f"/api/accounts/{account_id}/auto-answer/summary"
             ).json()["remaining_today"] == 4
+
+            article = client.post(
+                f"/api/accounts/{account_id}/articles",
+                json={
+                    "title": "本地客户端测试文章",
+                    "content": "这是一篇通过本机内置 Edge 自动发布的知乎文章。" * 20,
+                    "status": "ready",
+                },
+            ).json()
+            article_job = client.post(
+                "/api/article-jobs/publish",
+                json={"article_ids": [article["id"]]},
+            )
+            assert article_job.status_code == 202
+            assert article_job.json()["status"] == "pending"
+            assert "Windows" in article_job.json()["current_item"]
+
+            legacy_claim = client.post(
+                f"/api/local-publisher/client/tasks/claim?account_id={account_id}",
+                headers=device_headers,
+            )
+            assert legacy_claim.status_code == 200
+            assert legacy_claim.json() is None
+
+            article_claim = client.post(
+                f"/api/local-publisher/client/tasks/claim?account_id={account_id}"
+                "&task_types=answer,article",
+                headers=device_headers,
+            )
+            assert article_claim.status_code == 200
+            article_task = article_claim.json()
+            assert article_task["task_type"] == "article"
+            assert article_task["article_id"] == article["id"]
+            assert article_task["article_title"] == "本地客户端测试文章"
+
+            article_result = client.post(
+                f"/api/local-publisher/client/tasks/{article_task['id']}/result",
+                headers=device_headers,
+                json={
+                    "success": True,
+                    "published_url": "https://zhuanlan.zhihu.com/p/123456789",
+                },
+            )
+            assert article_result.status_code == 204
+            finished_article_job = client.get(
+                f"/api/article-jobs/{article_job.json()['id']}"
+            ).json()
+            assert finished_article_job["status"] == "completed"
+            assert finished_article_job["success_count"] == 1
+            saved_article = client.get(
+                f"/api/accounts/{account_id}/articles/{article['id']}"
+            ).json()
+            assert saved_article["status"] == "published"
+            assert saved_article["published_url"].endswith("/123456789")
+            assert saved_article["published_at"] is not None
     finally:
         app.dependency_overrides.pop(require_active_user, None)

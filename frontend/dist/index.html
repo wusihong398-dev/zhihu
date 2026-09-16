@@ -432,10 +432,10 @@
       </div>
 
       <div id="local-publisher-page" class="page">
-        <section class="page-heading"><div><span class="eyebrow">使用电脑常用网络发布</span><h1>Windows 本地发布客户端</h1><p>解决服务器 IP 被知乎风控的问题。每个知乎账号使用独立的本机 Edge 资料目录，登录状态不会混用。</p></div><a class="button button-primary" href="https://github.com/wusihong398-dev/zhihu/actions/workflows/windows-publisher.yml" target="_blank" rel="noopener">下载 Windows 客户端</a></section>
+        <section class="page-heading"><div><span class="eyebrow">使用电脑常用网络发布</span><h1>Windows 本地发布客户端</h1><p>使用内置 Edge 自动发布知乎文章和回答，解决服务器 IP 被知乎风控的问题。每个知乎账号使用独立资料目录，登录状态不会混用。</p></div><a class="button button-primary" href="https://github.com/wusihong398-dev/zhihu/actions/workflows/windows-publisher.yml" target="_blank" rel="noopener">下载 Windows 客户端</a></section>
         <section class="panel settings-panel"><div class="panel-head"><div><span class="eyebrow">第一步</span><h3>创建设备密钥</h3></div><button id="local-device-create" class="button button-primary" type="button">＋ 绑定这台电脑</button></div><div class="operation-form"><p class="muted">客户端通过独立设备密钥领取当前系统用户的发布任务。密钥只显示一次，请复制到 Windows 客户端；删除设备即可立即撤销访问。</p><div id="local-device-token-box" class="security-note" hidden><span>◇</span><div><strong>请立即复制设备密钥</strong><p id="local-device-token"></p></div><button id="local-device-copy" class="button button-primary" type="button">复制密钥</button></div><p id="local-device-error" class="form-error"></p></div></section>
         <section class="panel"><div class="panel-head"><div><span class="eyebrow">已绑定电脑</span><h3>本地发布设备</h3></div><button id="local-device-refresh" class="button button-ghost" type="button">刷新</button></div><div class="operation-table local-device-header"><span>设备名称</span><span>最后在线</span><span>状态</span><span>操作</span></div><div id="local-device-list"></div><div id="local-device-empty" class="empty-state"><span>◇</span><h3>还没有绑定电脑</h3><p>点击“绑定这台电脑”，将生成一次性设备密钥。</p></div></section>
-        <section class="security-note"><span>!</span><div><strong>账号设置还需选择“Windows 本地客户端”</strong><p>到“账号 → 知乎账号 → 编辑”，把回答发布方式切换为 Windows 本地客户端；然后在客户端为 qwg2 点击登录并启动任务监听。</p></div></section>
+        <section class="security-note"><span>!</span><div><strong>账号设置还需选择“Windows 本地客户端”</strong><p>到“账号 → 知乎账号 → 编辑”，把文章和回答发布方式切换为 Windows 本地客户端；然后在客户端选择对应账号，登录并启动任务监听。</p></div></section>
       </div>
 
       <div id="ai-page" class="page">
@@ -480,9 +480,9 @@
         </div>
         <label for="account-timezone">账号时区</label>
         <input id="account-timezone" name="timezone" maxlength="64" value="Asia/Shanghai" placeholder="例如：Asia/Shanghai" required>
-        <label for="answer-publish-mode">回答发布方式</label>
+        <label for="answer-publish-mode">文章和回答发布方式</label>
         <select id="answer-publish-mode" name="answer_publish_mode"><option value="local">Windows 本地客户端（推荐，使用本机网络）</option><option value="server">服务器浏览器（可能触发知乎风控）</option></select>
-        <p class="field-help">qwg2 这类在电脑可正常回答、服务器却出现 40362 的账号，请选择 Windows 本地客户端。</p>
+        <p class="field-help">在电脑可正常发布、服务器却出现限制的账号，请选择 Windows 本地客户端。</p>
         <p class="field-help">设置为 0 表示该账号暂不执行对应任务。</p>
         <label class="account-sync-card"><input id="account-sync-config" type="checkbox"><span><strong>同步另一个知乎账号的全部运营配置</strong><small>同步额度、时区、关键词规则、商品、关键词库和定时计划；登录状态与内容记录保持独立。</small></span></label>
         <div id="account-sync-options" hidden><label for="account-sync-source">配置来源账号</label><select id="account-sync-source"><option value="">请选择来源账号</option></select><p class="field-help">同名配置会更新，其他已有配置会保留。AI API、提示词模板和本地图片已在当前系统用户下自动共用。</p></div>
@@ -576,9 +576,9 @@
     <section class="dialog article-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-dialog-title"><div class="dialog-head"><div><span class="eyebrow">回答审核与编辑</span><h2 id="answer-dialog-title">编辑回答</h2></div><button id="answer-dialog-close" class="icon-button">×</button></div><form id="answer-edit-form"><label>知乎问题</label><a id="answer-edit-question" class="qa-question-link" target="_blank" rel="noopener"></a><label for="answer-edit-content">回答正文</label><textarea id="answer-edit-content" maxlength="100000" rows="18" required></textarea><div class="field-grid"><div><label for="answer-edit-status">状态</label><select id="answer-edit-status"><option value="draft">草稿</option><option value="ready">待发布</option><option value="failed">失败</option></select></div><div class="article-edit-meta"><label>正文统计</label><strong id="answer-edit-length">0 字</strong></div></div><p id="answer-edit-error" class="form-error"></p><div class="dialog-actions"><button id="answer-dialog-cancel" class="button button-ghost" type="button">取消</button><button id="answer-edit-submit" class="button button-primary" type="submit">保存回答</button></div></form></section>
   </div>
 
-  <script src="/assets/app.js?v=0.18.6" defer></script>
+  <script src="/assets/app.js?v=0.19.0" defer></script>
   <script src="/assets/prompt-library.js?v=0.17.2" defer></script>
-  <script src="/assets/qa.js?v=0.18.6" defer></script>
+  <script src="/assets/qa.js?v=0.19.0" defer></script>
   <script src="/assets/operations.js?v=0.17.2" defer></script>
 </body>
 </html>

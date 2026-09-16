@@ -8,10 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_active_user, user_is_expired
 from app.db.session import get_db
-from app.models.account import ZhihuAccount
+from app.models.account import AccountStatus, ZhihuAccount
+from app.models.article import Article, ArticleStatus
+from app.models.article_job import ArticleJob, ArticleJobStatus
 from app.models.answer import AnswerStatus, ZhihuAnswer
 from app.models.answer_job import AnswerJob, AnswerJobStatus
-from app.models.local_publisher import LocalAnswerPublishTask, LocalPublisherDevice
+from app.models.local_media import LocalMediaAsset
+from app.models.local_publisher import (
+    LocalAnswerPublishTask,
+    LocalArticlePublishTask,
+    LocalPublisherDevice,
+)
 from app.models.user import User, UserRole
 from app.schemas.local_publisher import (
     LocalPublisherAccountRead,
@@ -23,6 +30,7 @@ from app.schemas.local_publisher import (
     LocalPublisherTaskResult,
 )
 from app.services.local_publisher import create_device_token, hash_device_token
+from app.services.local_media import public_asset_url
 
 
 router = APIRouter(prefix="/local-publisher", tags=["local-publisher"])
@@ -135,52 +143,106 @@ async def client_accounts(
 @router.post("/client/tasks/claim", response_model=LocalPublisherTaskRead | None)
 async def claim_task(
     account_id: uuid.UUID | None = Query(default=None),
+    task_types: str = Query(default="answer"),
     db: AsyncSession = Depends(get_db),
     device: LocalPublisherDevice = Depends(require_local_device),
 ) -> LocalPublisherTaskRead | None:
     now = datetime.now(UTC)
     user = await db.get(User, device.user_id)
-    await db.execute(
-        update(LocalAnswerPublishTask)
-        .where(
-            LocalAnswerPublishTask.status == "leased",
-            LocalAnswerPublishTask.lease_expires_at < now,
+    requested = {
+        value.strip().lower()
+        for value in task_types.split(",")
+        if value.strip().lower() in {"answer", "article"}
+    }
+    if not requested:
+        requested = {"answer"}
+
+    answer_task = None
+    article_task = None
+    if "answer" in requested:
+        await db.execute(
+            update(LocalAnswerPublishTask)
+            .where(
+                LocalAnswerPublishTask.status == "leased",
+                LocalAnswerPublishTask.lease_expires_at < now,
+            )
+            .values(status="queued", leased_device_id=None, lease_expires_at=None)
         )
-        .values(status="queued", leased_device_id=None, lease_expires_at=None)
-    )
-    task_filters = [
-        LocalAnswerPublishTask.status == "queued",
-        AnswerJob.status.in_([AnswerJobStatus.pending, AnswerJobStatus.running]),
+        answer_filters = [
+            LocalAnswerPublishTask.status == "queued",
+            AnswerJob.status.in_([AnswerJobStatus.pending, AnswerJobStatus.running]),
+        ]
+        if user is None or user.role != UserRole.admin:
+            answer_filters.append(LocalAnswerPublishTask.user_id == device.user_id)
+        answer_query = (
+            select(LocalAnswerPublishTask)
+            .join(AnswerJob, AnswerJob.id == LocalAnswerPublishTask.job_id)
+            .where(*answer_filters)
+        )
+        if account_id is not None:
+            answer_query = answer_query.where(
+                LocalAnswerPublishTask.account_id == account_id
+            )
+        answer_task = await db.scalar(
+            answer_query.order_by(LocalAnswerPublishTask.created_at.asc())
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+
+    if "article" in requested:
+        await db.execute(
+            update(LocalArticlePublishTask)
+            .where(
+                LocalArticlePublishTask.status == "leased",
+                LocalArticlePublishTask.lease_expires_at < now,
+            )
+            .values(status="queued", leased_device_id=None, lease_expires_at=None)
+        )
+        article_filters = [
+            LocalArticlePublishTask.status == "queued",
+            ArticleJob.status.in_([ArticleJobStatus.pending, ArticleJobStatus.running]),
+        ]
+        if user is None or user.role != UserRole.admin:
+            article_filters.append(LocalArticlePublishTask.user_id == device.user_id)
+        article_query = (
+            select(LocalArticlePublishTask)
+            .join(ArticleJob, ArticleJob.id == LocalArticlePublishTask.job_id)
+            .where(*article_filters)
+        )
+        if account_id is not None:
+            article_query = article_query.where(
+                LocalArticlePublishTask.account_id == account_id
+            )
+        article_task = await db.scalar(
+            article_query.order_by(LocalArticlePublishTask.created_at.asc())
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+
+    candidates = [
+        ("answer", answer_task),
+        ("article", article_task),
     ]
-    if user is None or user.role != UserRole.admin:
-        task_filters.append(LocalAnswerPublishTask.user_id == device.user_id)
-    task_query = (
-        select(LocalAnswerPublishTask)
-        .join(AnswerJob, AnswerJob.id == LocalAnswerPublishTask.job_id)
-        .where(*task_filters)
-    )
-    if account_id is not None:
-        task_query = task_query.where(LocalAnswerPublishTask.account_id == account_id)
-    task = await db.scalar(
-        task_query.order_by(LocalAnswerPublishTask.created_at.asc())
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    )
-    if task is None:
+    available = [(kind, task) for kind, task in candidates if task is not None]
+    if not available:
         await db.commit()
         return None
+    kind, task = min(available, key=lambda item: item[1].created_at)
     account = await db.get(ZhihuAccount, task.account_id)
-    answer = await db.get(ZhihuAnswer, task.answer_id)
-    job = await db.get(AnswerJob, task.job_id)
+    item = await db.get(
+        ZhihuAnswer if kind == "answer" else Article,
+        task.answer_id if kind == "answer" else task.article_id,
+    )
+    job = await db.get(AnswerJob if kind == "answer" else ArticleJob, task.job_id)
     if (
         account is None
-        or answer is None
+        or item is None
         or job is None
         or not account.enabled
         or account.answer_publish_mode != "local"
     ):
         task.status = "failed"
-        task.error_message = "账号或回答不存在，或账号已切换发布方式"
+        task.error_message = "账号或发布内容不存在，或账号已切换发布方式"
         task.completed_at = now
         await db.commit()
         return None
@@ -189,18 +251,43 @@ async def claim_task(
     task.leased_device_id = device.id
     task.lease_expires_at = expires
     task.attempt_count += 1
-    job.status = AnswerJobStatus.running
-    job.current_item = f"本地发布：{answer.question_title}"
+    job.status = (
+        AnswerJobStatus.running if kind == "answer" else ArticleJobStatus.running
+    )
+    label = item.question_title if kind == "answer" else item.title
+    job.current_item = f"本地发布：{label}"
     await db.commit()
+    if kind == "answer":
+        return LocalPublisherTaskRead(
+            id=task.id,
+            job_id=task.job_id,
+            task_type="answer",
+            answer_id=task.answer_id,
+            account_id=task.account_id,
+            account_name=account.display_name,
+            question_title=item.question_title,
+            question_url=item.question_url,
+            target_url=item.question_url,
+            content=item.content,
+            attempt_count=task.attempt_count,
+            lease_expires_at=expires,
+        )
+    image_url = None
+    if item.local_image_id:
+        image = await db.get(LocalMediaAsset, item.local_image_id)
+        if image is not None:
+            image_url = public_asset_url(image)
     return LocalPublisherTaskRead(
         id=task.id,
         job_id=task.job_id,
-        answer_id=task.answer_id,
+        task_type="article",
+        article_id=task.article_id,
         account_id=task.account_id,
         account_name=account.display_name,
-        question_title=answer.question_title,
-        question_url=answer.question_url,
-        content=answer.content,
+        article_title=item.title,
+        target_url="https://zhuanlan.zhihu.com/write",
+        content=item.content,
+        image_url=image_url,
         attempt_count=task.attempt_count,
         lease_expires_at=expires,
     )
@@ -208,15 +295,19 @@ async def claim_task(
 
 async def _leased_task(
     task_id: uuid.UUID, device: LocalPublisherDevice, db: AsyncSession
-) -> LocalAnswerPublishTask:
+) -> tuple[str, LocalAnswerPublishTask | LocalArticlePublishTask]:
     task = await db.get(LocalAnswerPublishTask, task_id)
+    kind = "answer"
+    if task is None:
+        task = await db.get(LocalArticlePublishTask, task_id)
+        kind = "article"
     if (
         task is None
         or task.leased_device_id != device.id
         or task.status != "leased"
     ):
         raise HTTPException(status_code=409, detail="任务租约无效或已结束")
-    return task
+    return kind, task
 
 
 @router.post(
@@ -228,7 +319,7 @@ async def heartbeat_task(
     db: AsyncSession = Depends(get_db),
     device: LocalPublisherDevice = Depends(require_local_device),
 ) -> LocalPublisherHeartbeatRead:
-    task = await _leased_task(task_id, device, db)
+    _, task = await _leased_task(task_id, device, db)
     task.lease_expires_at = datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS)
     await db.commit()
     return LocalPublisherHeartbeatRead(lease_expires_at=task.lease_expires_at)
@@ -241,7 +332,9 @@ async def finish_task(
     db: AsyncSession = Depends(get_db),
     device: LocalPublisherDevice = Depends(require_local_device),
 ) -> Response:
-    task = await _leased_task(task_id, device, db)
+    kind, task = await _leased_task(task_id, device, db)
+    if kind == "article":
+        return await _finish_article_task(task, payload, db)
     answer = await db.get(ZhihuAnswer, task.answer_id)
     job = await db.get(AnswerJob, task.job_id)
     if answer is None or job is None:
@@ -282,5 +375,64 @@ async def finish_task(
         )
     else:
         job.current_item = "等待 Windows 本地发布客户端领取下一项"
+    await db.commit()
+    return Response(status_code=204)
+
+
+async def _finish_article_task(
+    task: LocalArticlePublishTask,
+    payload: LocalPublisherTaskResult,
+    db: AsyncSession,
+) -> Response:
+    article = await db.get(Article, task.article_id)
+    job = await db.get(ArticleJob, task.job_id)
+    account = await db.get(ZhihuAccount, task.account_id)
+    if article is None or job is None:
+        raise HTTPException(status_code=409, detail="任务关联的文章或批次已不存在")
+    now = datetime.now(UTC)
+    if payload.success:
+        published_url = (payload.published_url or "").strip()
+        if not re.search(r"zhuanlan\.zhihu\.com/p/\d+", published_url):
+            raise HTTPException(status_code=422, detail="发布成功时必须回传知乎文章公开地址")
+        article.status = ArticleStatus.published
+        article.published_url = published_url
+        article.published_at = now
+        article.publish_attempted_at = now
+        article.error_message = None
+        task.status = "completed"
+        task.result_url = published_url
+        task.error_message = None
+        job.success_count += 1
+        if account is not None:
+            account.status = AccountStatus.online
+    else:
+        failure = (payload.error_message or "本地客户端未确认文章发布成功").strip()
+        article.status = ArticleStatus.failed
+        article.publish_attempted_at = now
+        article.error_message = failure[:2000]
+        task.status = "failed"
+        task.error_message = failure[:2000]
+        job.failed_count += 1
+        detail = f"• {article.title}：{failure}"
+        existing = (job.error_message or "").strip()
+        job.error_message = (
+            f"{existing}\n{detail}" if existing else detail
+        )[:8000]
+    task.completed_at = now
+    task.lease_expires_at = None
+    job.completed_count += 1
+    if job.completed_count >= job.total_count:
+        job.status = ArticleJobStatus.completed
+        job.current_item = None
+        job.completed_at = now
+        if job.failed_count:
+            details = (job.error_message or "").strip()
+            job.error_message = (
+                f"任务完成，其中 {job.failed_count} 篇文章失败。失败明细：\n{details}"
+            )[:8000]
+        else:
+            job.error_message = None
+    else:
+        job.current_item = "等待 Windows 本地发布客户端领取下一篇文章"
     await db.commit()
     return Response(status_code=204)

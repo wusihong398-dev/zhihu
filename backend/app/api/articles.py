@@ -48,6 +48,10 @@ from app.services.local_media import (
     insert_local_image,
     text_content_length,
 )
+from app.services.local_publisher import (
+    article_job_has_local_tasks,
+    enqueue_local_article_tasks,
+)
 from app.services.zhihu_article_sync import (
     ZhihuArticleSyncError,
     ZhihuArticleSyncLoginRequired,
@@ -490,6 +494,19 @@ async def create_publish_job(
         raise HTTPException(
             status_code=400, detail="所选文章中包含已发布文章，请取消选择后重试"
         )
+    account_rows = list(
+        (
+            await db.execute(
+                select(Article.account_id, ZhihuAccount.answer_publish_mode)
+                .join(ZhihuAccount, ZhihuAccount.id == Article.account_id)
+                .where(Article.id.in_(owned_ids))
+                .distinct()
+            )
+        ).all()
+    )
+    if len(account_rows) != 1:
+        raise HTTPException(status_code=400, detail="请一次只发布同一个知乎账号的文章")
+    account_id, publish_mode = account_rows[0]
     active = await db.scalar(
         select(func.count(ArticleJob.id)).where(
             ArticleJob.user_id == user.id,
@@ -507,15 +524,24 @@ async def create_publish_job(
         raise HTTPException(status_code=409, detail="已有未结束的文章发布任务")
     job = ArticleJob(
         user_id=user.id,
+        account_id=account_id,
         job_type=ArticleJobType.publish,
         status=ArticleJobStatus.pending,
         total_count=len(owned_ids),
         payload_json=json.dumps({"article_ids": [str(value) for value in owned_ids]}),
     )
     db.add(job)
+    if publish_mode == "local":
+        await db.execute(
+            update(Article)
+            .where(Article.id.in_(owned_ids))
+            .values(status=ArticleStatus.ready, error_message=None)
+        )
+        await enqueue_local_article_tasks(job, owned_ids, db)
     await db.commit()
     await db.refresh(job)
-    start_article_job(job.id)
+    if publish_mode != "local":
+        start_article_job(job.id)
     return _job_read(job)
 
 
@@ -655,9 +681,13 @@ async def resume_article_job(
         raise HTTPException(status_code=409, detail="只有暂停中的任务可以继续")
     job.status = ArticleJobStatus.running
     job.error_message = None
+    has_local_tasks = await article_job_has_local_tasks(job.id, db)
+    if has_local_tasks:
+        job.current_item = "等待 Windows 本地发布客户端领取文章任务"
     await db.commit()
     await db.refresh(job)
-    start_article_job(job.id)
+    if not has_local_tasks:
+        start_article_job(job.id)
     return _job_read(job)
 
 

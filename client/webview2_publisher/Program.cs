@@ -6,12 +6,22 @@ using Microsoft.Web.WebView2.WinForms;
 namespace TOTOD.WebView2Publisher;
 
 internal record Account(string id, string display_name, string answer_publish_mode);
-internal record PublishTask(string id, string account_id, string question_title, string question_url, string content);
+internal record PublishTask(
+    string id,
+    string task_type,
+    string account_id,
+    string? question_title,
+    string? question_url,
+    string? article_title,
+    string? target_url,
+    string content,
+    string? image_url
+);
 internal record Result(bool success, string? published_url = null, string? error_message = null);
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.18.3";
+    const string AppVersion = "0.19.0";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
@@ -125,13 +135,20 @@ internal sealed class MainForm : Form
         try {
             if (!await LoggedInAsync()) { status.Text = "等待知乎登录…"; return; }
             status.Text = "运行中：正在等待发布任务";
-            var task = await http.PostAsync($"local-publisher/client/tasks/claim?account_id={Uri.EscapeDataString(activeAccount)}", null);
+            var task = await http.PostAsync($"local-publisher/client/tasks/claim?account_id={Uri.EscapeDataString(activeAccount)}&task_types=answer%2Carticle", null);
             task.EnsureSuccessStatusCode();
             var item = await task.Content.ReadFromJsonAsync<PublishTask>();
             if (item is null) return;
-            AddLog("领取任务：" + item.question_title); status.Text = "正在发布：" + item.question_title;
+            var itemTitle = item.task_type == "article" ? item.article_title : item.question_title;
+            AddLog($"领取{(item.task_type == "article" ? "文章" : "回答")}任务：{itemTitle}");
+            status.Text = "正在发布：" + itemTitle;
             Result result;
-            try { result = new(true, await PublishAsync(item)); }
+            try {
+                var publishedUrl = item.task_type == "article"
+                    ? await PublishArticleAsync(item)
+                    : await PublishAnswerAsync(item);
+                result = new(true, publishedUrl);
+            }
             catch (Exception ex) { result = new(false, error_message: ex.Message); AddLog("发布失败：" + ex.Message); }
             var response = await http.PostAsJsonAsync($"local-publisher/client/tasks/{item.id}/result", result);
             response.EnsureSuccessStatusCode();
@@ -155,8 +172,9 @@ internal sealed class MainForm : Form
         return JsonSerializer.Deserialize<string>(raw) ?? "";
     }
 
-    async Task<string> PublishAsync(PublishTask task)
+    async Task<string> PublishAnswerAsync(PublishTask task)
     {
+        if (string.IsNullOrWhiteSpace(task.question_url)) throw new Exception("回答任务缺少问题链接");
         var nav = WaitNavigationAsync(); browser.CoreWebView2.Navigate(task.question_url); await nav; await Task.Delay(1800);
         var body = await ScriptStringAsync("document.body?.innerText || ''");
         if (body.Contains("40362") || body.Contains("暂时限制本次访问")) throw new Exception("知乎风控 40362：WebView2 会话被限制");
@@ -301,6 +319,181 @@ internal sealed class MainForm : Form
             throw new Exception("知乎未返回回答链接，无法确认发布成功");
         } finally {
             browser.CoreWebView2.WebResourceResponseReceived -= CapturePublishResponse;
+        }
+    }
+
+    async Task<string> PublishArticleAsync(PublishTask task)
+    {
+        if (string.IsNullOrWhiteSpace(task.article_title)) throw new Exception("文章任务缺少标题");
+        var nav = WaitNavigationAsync();
+        browser.CoreWebView2.Navigate(task.target_url ?? "https://zhuanlan.zhihu.com/write");
+        await nav; await Task.Delay(2200);
+        var body = await ScriptStringAsync("document.body?.innerText || ''");
+        if (body.Contains("40362") || body.Contains("暂时限制本次访问"))
+            throw new Exception("知乎风控 40362：WebView2 会话被限制");
+        if (body.Contains("登录知乎") || body.Contains("安全验证"))
+            throw new Exception("知乎要求登录或安全验证，请先在内嵌 Edge 中完成验证");
+
+        var articleText = task.content;
+        if (!string.IsNullOrWhiteSpace(task.image_url))
+            articleText = System.Text.RegularExpressions.Regex.Replace(
+                articleText, @"!\[[^\]]*\]\([^\)]+\)", "").Trim();
+        var titleJson = JsonSerializer.Serialize(task.article_title);
+        var contentJson = JsonSerializer.Serialize(articleText);
+        var filled = "missing";
+        for (var i = 0; i < 30 && filled != "filled"; i++) {
+            if (i > 0) await Task.Delay(400);
+            filled = await ScriptStringAsync("""
+            (() => {
+              const visible = e => {
+                if (!e) return false;
+                const s = getComputedStyle(e), r = e.getBoundingClientRect();
+                return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 10 && r.height > 10;
+              };
+              const title = [
+                'textarea[placeholder*="标题"]', 'input[placeholder*="标题"]',
+                '.WriteIndex-titleInput textarea', '.WriteIndex-titleInput input'
+              ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
+              const editor = [
+                '.public-DraftEditor-content[contenteditable="true"]',
+                '[contenteditable="true"][role="textbox"]',
+                'div[contenteditable="true"]'
+              ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
+              if (!title || !editor) return 'missing';
+              const setter = Object.getOwnPropertyDescriptor(
+                title.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+                'value'
+              )?.set;
+              if (setter) setter.call(title, TITLE); else title.value = TITLE;
+              title.dispatchEvent(new Event('input', {bubbles: true}));
+              title.dispatchEvent(new Event('change', {bubbles: true}));
+              editor.focus();
+              const selection = window.getSelection(), range = document.createRange();
+              range.selectNodeContents(editor); selection.removeAllRanges(); selection.addRange(range);
+              let inserted = false;
+              try { inserted = document.execCommand('insertText', false, CONTENT); } catch (_) {}
+              if (!inserted || !(editor.innerText || '').trim()) editor.innerText = CONTENT;
+              editor.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: CONTENT}));
+              editor.dispatchEvent(new Event('change', {bubbles: true}));
+              return title.value.trim() && (editor.innerText || '').trim() ? 'filled' : 'empty';
+            })()
+            """).Replace("TITLE", titleJson).Replace("CONTENT", contentJson));
+        }
+        if (filled != "filled") throw new Exception("知乎文章创作页未找到标题或正文编辑器");
+        AddLog("文章标题和正文已填写");
+
+        if (!string.IsNullOrWhiteSpace(task.image_url)) {
+            try {
+                var bytes = await http.GetByteArrayAsync(task.image_url);
+                using var stream = new MemoryStream(bytes);
+                using var source = System.Drawing.Image.FromStream(stream);
+                using var bitmap = new Bitmap(source);
+                Clipboard.SetImage(bitmap);
+                await ScriptStringAsync("""
+                (() => {
+                  const visible = e => {
+                    const s = getComputedStyle(e), r = e.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 10 && r.height > 10;
+                  };
+                  const editor = [
+                    '.public-DraftEditor-content[contenteditable="true"]',
+                    '[contenteditable="true"][role="textbox"]',
+                    'div[contenteditable="true"]'
+                  ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
+                  if (!editor) return 'missing';
+                  editor.focus();
+                  const range = document.createRange(), selection = window.getSelection();
+                  range.selectNodeContents(editor); range.collapse(false);
+                  selection.removeAllRanges(); selection.addRange(range);
+                  return 'ready';
+                })()
+                """);
+                browser.Focus(); SendKeys.SendWait("^v"); await Task.Delay(5000);
+                AddLog("本地图片已粘贴到文章正文");
+            } catch (Exception ex) {
+                throw new Exception("文章图片插入失败：" + ex.Message, ex);
+            }
+        }
+
+        await Task.Delay(1000);
+        var publishResponse = new TaskCompletionSource<(int Status, string Body)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async void CaptureArticlePublishResponse(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
+        {
+            var method = args.Request.Method.ToUpperInvariant();
+            if ((method != "POST" && method != "PUT") ||
+                !args.Request.Uri.Contains("/publish", StringComparison.OrdinalIgnoreCase)) return;
+            try {
+                using var stream = await args.Response.GetContentAsync();
+                using var reader = new StreamReader(stream);
+                publishResponse.TrySetResult((args.Response.StatusCode, await reader.ReadToEndAsync()));
+            } catch { }
+        }
+        browser.CoreWebView2.WebResourceResponseReceived += CaptureArticlePublishResponse;
+        try {
+            var clicked = await ScriptStringAsync("""
+            (() => {
+              const visible = e => {
+                const s = getComputedStyle(e), r = e.getBoundingClientRect();
+                return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 2 && r.height > 2;
+              };
+              const text = e => (e.innerText || e.textContent || '').replace(/\s+/g, '');
+              const buttons = [...document.querySelectorAll('button,[role="button"]')].filter(visible);
+              const button = buttons.find(e => text(e) === '发布');
+              if (!button) return 'missing:' + buttons.map(text).filter(Boolean).slice(0, 25).join('|');
+              if (button.disabled || button.getAttribute('aria-disabled') === 'true') return 'disabled';
+              button.setAttribute('data-totod-initial-publish', 'true');
+              button.click(); return 'clicked';
+            })()
+            """);
+            if (clicked == "disabled") throw new Exception("知乎文章“发布”按钮不可用，请检查标题和正文");
+            if (clicked != "clicked") throw new Exception("未找到知乎文章创作页的“发布”按钮；页面按钮：" + clicked.Replace("missing:", ""));
+            AddLog("已点击文章“发布”，正在完成最终确认");
+
+            for (var i = 0; i < 50; i++) {
+                await Task.Delay(600);
+                var url = browser.Source?.ToString() ?? "";
+                var publicMatch = System.Text.RegularExpressions.Regex.Match(url, @"zhuanlan\.zhihu\.com/p/(\d+)(?:[?#]|$)");
+                if (publicMatch.Success) return $"https://zhuanlan.zhihu.com/p/{publicMatch.Groups[1].Value}";
+
+                if (publishResponse.Task.IsCompletedSuccessfully) {
+                    var captured = await publishResponse.Task;
+                    if (captured.Status >= 400) {
+                        if (captured.Body.Contains("40362")) throw new Exception("知乎风控 40362：当前 WebView2 会话被限制");
+                        throw new Exception($"知乎拒绝发布文章（HTTP {captured.Status}）：{captured.Body[..Math.Min(captured.Body.Length, 400)]}");
+                    }
+                    var id = System.Text.RegularExpressions.Regex.Match(
+                        captured.Body, "\\\"(?:id|article_id)\\\"\\s*:\\s*\\\"?(\\d+)");
+                    if (!id.Success)
+                        id = System.Text.RegularExpressions.Regex.Match(url, @"/p/(\d+)");
+                    if (id.Success) return $"https://zhuanlan.zhihu.com/p/{id.Groups[1].Value}";
+                }
+
+                var confirm = await ScriptStringAsync("""
+                (() => {
+                  const visible = e => {
+                    const s = getComputedStyle(e), r = e.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 2 && r.height > 2;
+                  };
+                  const text = e => (e.innerText || e.textContent || '').replace(/\s+/g, '');
+                  const labels = ['确认发布', '发布文章', '立即发布', '确定发布', '确定', '确认'];
+                  const buttons = [...document.querySelectorAll('button,[role="button"]')]
+                    .filter(e => visible(e) && !e.hasAttribute('data-totod-initial-publish') && !e.hasAttribute('data-totod-confirmed'));
+                  const button = buttons.find(e => labels.includes(text(e))) || buttons.reverse().find(e => text(e) === '发布');
+                  if (!button) return '';
+                  if (button.disabled || button.getAttribute('aria-disabled') === 'true') return 'disabled';
+                  button.setAttribute('data-totod-confirmed', 'true'); button.click(); return text(button);
+                })()
+                """);
+                if (!string.IsNullOrEmpty(confirm) && confirm != "disabled") AddLog("已点击最终确认：" + confirm);
+                body = await ScriptStringAsync("document.body?.innerText || ''");
+                if (body.Contains("40362") || body.Contains("暂时限制本次访问"))
+                    throw new Exception("知乎风控 40362：当前 WebView2 会话被限制");
+                if (body.Contains("账号或由于存在异常行为暂时被限制使用"))
+                    throw new Exception("知乎正式发布未通过：账号或当前发布环境被临时限制使用");
+            }
+            throw new Exception("知乎未返回文章公开链接，无法确认文章已正式发布");
+        } finally {
+            browser.CoreWebView2.WebResourceResponseReceived -= CaptureArticlePublishResponse;
         }
     }
 
