@@ -21,7 +21,7 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.19.0";
+    const string AppVersion = "0.19.1";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
@@ -154,6 +154,8 @@ internal sealed class MainForm : Form
             response.EnsureSuccessStatusCode();
             if (!result.success && (result.error_message?.Contains("40362") == true || result.error_message?.Contains("10001") == true))
                 StopListening("已停止：知乎拒绝当前 WebView2 会话");
+            else if (!result.success && result.error_message?.Contains("文章创作页结构未识别") == true)
+                StopListening("已停止：知乎文章编辑器结构未识别，已保留其余待发布任务");
         } catch (Exception ex) { Fail("任务请求失败：" + ex.Message); }
         finally { busy = false; }
     }
@@ -340,10 +342,10 @@ internal sealed class MainForm : Form
                 articleText, @"!\[[^\]]*\]\([^\)]+\)", "").Trim();
         var titleJson = JsonSerializer.Serialize(task.article_title);
         var contentJson = JsonSerializer.Serialize(articleText);
-        var filled = "missing";
-        for (var i = 0; i < 30 && filled != "filled"; i++) {
+        var titleState = "title-missing";
+        for (var i = 0; i < 30 && titleState != "title-filled"; i++) {
             if (i > 0) await Task.Delay(400);
-            filled = await ScriptStringAsync("""
+            titleState = await ScriptStringAsync("""
             (() => {
               const visible = e => {
                 if (!e) return false;
@@ -352,34 +354,144 @@ internal sealed class MainForm : Form
               };
               const title = [
                 'textarea[placeholder*="标题"]', 'input[placeholder*="标题"]',
-                '.WriteIndex-titleInput textarea', '.WriteIndex-titleInput input'
+                '.WriteIndex-titleInput textarea', '.WriteIndex-titleInput input',
+                '[data-placeholder*="标题"][contenteditable="true"]',
+                '[contenteditable="true"][aria-label*="标题"]'
               ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
-              const editor = [
-                '.public-DraftEditor-content[contenteditable="true"]',
-                '[contenteditable="true"][role="textbox"]',
-                'div[contenteditable="true"]'
-              ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
-              if (!title || !editor) return 'missing';
-              const setter = Object.getOwnPropertyDescriptor(
-                title.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-                'value'
-              )?.set;
-              if (setter) setter.call(title, TITLE); else title.value = TITLE;
+              if (!title) return 'title-missing';
+              if (title.isContentEditable) {
+                title.focus();
+                title.textContent = TITLE_TOKEN;
+              } else {
+                const setter = Object.getOwnPropertyDescriptor(
+                  title.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+                  'value'
+                )?.set;
+                if (setter) setter.call(title, TITLE_TOKEN); else title.value = TITLE_TOKEN;
+              }
               title.dispatchEvent(new Event('input', {bubbles: true}));
               title.dispatchEvent(new Event('change', {bubbles: true}));
-              editor.focus();
-              const selection = window.getSelection(), range = document.createRange();
-              range.selectNodeContents(editor); selection.removeAllRanges(); selection.addRange(range);
-              let inserted = false;
-              try { inserted = document.execCommand('insertText', false, CONTENT); } catch (_) {}
-              if (!inserted || !(editor.innerText || '').trim()) editor.innerText = CONTENT;
-              editor.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: CONTENT}));
-              editor.dispatchEvent(new Event('change', {bubbles: true}));
-              return title.value.trim() && (editor.innerText || '').trim() ? 'filled' : 'empty';
+              const current = title.isContentEditable ? title.textContent : title.value;
+              return (current || '').trim() ? 'title-filled' : 'title-empty';
             })()
-            """.Replace("TITLE", titleJson).Replace("CONTENT", contentJson));
+            """.Replace("TITLE_TOKEN", titleJson));
         }
-        if (filled != "filled") throw new Exception("知乎文章创作页未找到标题或正文编辑器");
+        if (titleState != "title-filled")
+            throw new Exception("知乎文章创作页结构未识别：未找到标题编辑器");
+
+        var editorState = "body-missing";
+        for (var i = 0; i < 30 && !editorState.StartsWith("body-ready"); i++) {
+            if (i > 0) await Task.Delay(400);
+            editorState = await ScriptStringAsync("""
+            (() => {
+              const visible = e => {
+                if (!e) return false;
+                const s = getComputedStyle(e), r = e.getBoundingClientRect();
+                return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0 &&
+                       r.width > 20 && r.height > 16;
+              };
+              const title = [
+                'textarea[placeholder*="标题"]', 'input[placeholder*="标题"]',
+                '.WriteIndex-titleInput textarea', '.WriteIndex-titleInput input',
+                '[data-placeholder*="标题"][contenteditable="true"]',
+                '[contenteditable="true"][aria-label*="标题"]'
+              ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);
+              const titleRect = title?.getBoundingClientRect();
+              const usable = e => {
+                if (!visible(e) || e === title || title?.contains(e) || e.contains(title)) return false;
+                const r = e.getBoundingClientRect();
+                if (titleRect && r.bottom <= titleRect.bottom + 2) return false;
+                if (r.left > innerWidth * 0.78) return false;
+                if (e.closest('header,nav,[role="toolbar"],.RichText-toolbar')) return false;
+                return true;
+              };
+              const selectors = [
+                '[data-totod-article-editor="true"]',
+                '.ProseMirror[contenteditable="true"]',
+                '.public-DraftEditor-content[contenteditable="true"]',
+                '.DraftEditor-editorContainer [contenteditable="true"]',
+                '[data-contents="true"] [contenteditable="true"]',
+                '[data-placeholder*="正文"][contenteditable="true"]',
+                '[contenteditable="true"][role="textbox"]',
+                'main [contenteditable="true"]',
+                'div[contenteditable="true"]'
+              ];
+              let candidates = selectors.flatMap(s => [...document.querySelectorAll(s)]).filter(usable);
+              candidates = [...new Set(candidates)].sort((a, b) => {
+                const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+                return (br.width * br.height) - (ar.width * ar.height);
+              });
+              let editor = candidates[0];
+              if (!editor) {
+                const placeholder = [...document.querySelectorAll('[data-placeholder],p,div,span')]
+                  .filter(visible)
+                  .find(e => ((e.getAttribute('data-placeholder') || e.textContent || '').trim() === '请输入正文'));
+                if (placeholder) {
+                  placeholder.scrollIntoView({block: 'center'});
+                  placeholder.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                  placeholder.click();
+                  placeholder.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                  editor = placeholder.closest('[contenteditable="true"]') ||
+                           placeholder.querySelector('[contenteditable="true"]');
+                }
+              }
+              if (!editor && document.activeElement?.isContentEditable && usable(document.activeElement))
+                editor = document.activeElement;
+              if (!editor) {
+                const editableCount = document.querySelectorAll('[contenteditable="true"]').length;
+                const placeholders = [...document.querySelectorAll('[data-placeholder],textarea,input')]
+                  .map(e => e.getAttribute('data-placeholder') || e.getAttribute('placeholder') || '')
+                  .filter(Boolean).slice(0, 8).join('|');
+                return `body-missing:editable=${editableCount};iframe=${document.querySelectorAll('iframe').length};placeholder=${placeholders}`;
+              }
+              editor.setAttribute('data-totod-article-editor', 'true');
+              editor.scrollIntoView({block: 'center'});
+              editor.focus();
+              editor.click();
+              return 'body-ready:' + editor.tagName + ':' + (editor.className || '').toString().slice(0, 100);
+            })()
+            """);
+        }
+        if (!editorState.StartsWith("body-ready"))
+            throw new Exception("知乎文章创作页结构未识别：未找到正文编辑器（" + editorState + "）");
+
+        var fillState = await ScriptStringAsync("""
+        (() => {
+          const editor = document.querySelector('[data-totod-article-editor="true"]');
+          if (!editor) return 'editor-lost';
+          editor.focus();
+          const selection = window.getSelection(), range = document.createRange();
+          range.selectNodeContents(editor); selection.removeAllRanges(); selection.addRange(range);
+          let inserted = false;
+          try { inserted = document.execCommand('insertText', false, CONTENT_TOKEN); } catch (_) {}
+          editor.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: CONTENT_TOKEN}));
+          editor.dispatchEvent(new Event('change', {bubbles: true}));
+          const length = (editor.innerText || editor.textContent || '').trim().length;
+          return length > 0 ? 'body-filled:' + length : (inserted ? 'body-empty-after-insert' : 'body-insert-rejected');
+        })()
+        """.Replace("CONTENT_TOKEN", contentJson));
+        if (!fillState.StartsWith("body-filled")) {
+            Clipboard.SetText(articleText);
+            await ScriptStringAsync("""
+            (() => {
+              const editor = document.querySelector('[data-totod-article-editor="true"]');
+              if (!editor) return 'missing';
+              editor.focus(); editor.click(); return 'ready';
+            })()
+            """);
+            browser.Focus();
+            SendKeys.SendWait("^v");
+            await Task.Delay(1800);
+            fillState = await ScriptStringAsync("""
+            (() => {
+              const editor = document.querySelector('[data-totod-article-editor="true"]');
+              const length = (editor?.innerText || editor?.textContent || '').trim().length;
+              return length > 0 ? 'body-filled:' + length : 'body-empty-after-paste';
+            })()
+            """);
+        }
+        if (!fillState.StartsWith("body-filled"))
+            throw new Exception("知乎文章正文填写失败（" + fillState + "）");
         AddLog("文章标题和正文已填写");
 
         if (!string.IsNullOrWhiteSpace(task.image_url)) {
@@ -396,7 +508,11 @@ internal sealed class MainForm : Form
                     return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 10 && r.height > 10;
                   };
                   const editor = [
+                    '[data-totod-article-editor="true"]',
+                    '.ProseMirror[contenteditable="true"]',
                     '.public-DraftEditor-content[contenteditable="true"]',
+                    '.DraftEditor-editorContainer [contenteditable="true"]',
+                    '[data-contents="true"] [contenteditable="true"]',
                     '[contenteditable="true"][role="textbox"]',
                     'div[contenteditable="true"]'
                   ].flatMap(s => [...document.querySelectorAll(s)]).find(visible);

@@ -20,10 +20,26 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.19.0"
+        assert version.json()["version"] == "0.19.1"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
+
+
+def test_webview2_article_editor_supports_new_zhihu_structure() -> None:
+    publisher = (
+        PROJECT_ROOT / "client/webview2_publisher/Program.cs"
+    ).read_text(encoding="utf-8")
+    project = (
+        PROJECT_ROOT / "client/webview2_publisher/TOTOD.WebView2Publisher.csproj"
+    ).read_text(encoding="utf-8")
+    assert 'const string AppVersion = "0.19.1"' in publisher
+    assert "[data-placeholder*=\"正文\"][contenteditable=\"true\"]" in publisher
+    assert "请输入正文" in publisher
+    assert 'SendKeys.SendWait("^v")' in publisher
+    assert "文章创作页结构未识别" in publisher
+    assert "已保留其余待发布任务" in publisher
+    assert "<Version>0.19.1</Version>" in project
 
 
 def test_article_list_requires_one_account_at_a_time() -> None:
