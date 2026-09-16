@@ -99,9 +99,20 @@ def _sync_title_key(value: str) -> str:
 
 
 def _article_read(article: Article, account_name: str = "") -> ArticleRead:
-    return ArticleRead.model_validate(article).model_copy(
-        update={"account_name": account_name}
-    )
+    item = ArticleRead.model_validate(article)
+    updates = {"account_name": account_name}
+    if (
+        article.status == ArticleStatus.failed
+        and not (article.content or "").strip()
+        and (
+            not article.error_message
+            or "Value cannot be null" in article.error_message
+        )
+    ):
+        updates["error_message"] = (
+            "文章生成失败，正文为空；请重新生成或点击编辑补充正文后再发布"
+        )
+    return item.model_copy(update=updates)
 
 
 def _job_read(job: ArticleJob) -> ArticleJobRead:
@@ -485,6 +496,29 @@ async def create_publish_job(
     owned_ids = await _owned_article_ids(payload.article_ids, user, db)
     if len(owned_ids) != len(set(payload.article_ids)):
         raise HTTPException(status_code=404, detail="部分文章不存在或无权操作")
+    selected_articles = list(
+        (
+            await db.scalars(select(Article).where(Article.id.in_(owned_ids)))
+        ).all()
+    )
+    empty_articles = [
+        article
+        for article in selected_articles
+        if not (article.title or "").strip() or not (article.content or "").strip()
+    ]
+    if empty_articles:
+        examples = "、".join(
+            (article.keyword_text or article.title or str(article.id)).strip()[:30]
+            for article in empty_articles[:3]
+        )
+        more = "等" if len(empty_articles) > 3 else ""
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"所选文章中有 {len(empty_articles)} 篇正文为空，生成失败记录不能直接发布。"
+                f"请重新生成，或点击编辑补充正文后再发布：{examples}{more}"
+            ),
+        )
     published_count = await db.scalar(
         select(func.count(Article.id)).where(
             Article.id.in_(owned_ids), Article.status == ArticleStatus.published
@@ -763,8 +797,11 @@ async def publish_article(
         raise HTTPException(status_code=400, detail="知乎账号已停用")
     if article.status != ArticleStatus.ready:
         raise HTTPException(status_code=400, detail="请先将文章状态设置为待发布")
-    if not article.title.strip() or not article.content.strip():
-        raise HTTPException(status_code=400, detail="文章标题和正文不能为空")
+    if not (article.title or "").strip() or not (article.content or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="文章正文为空，生成失败记录不能直接发布；请重新生成或编辑补充正文",
+        )
     if len(article.title.strip()) > 100:
         raise HTTPException(status_code=400, detail="知乎文章标题不能超过 100 个字符")
     try:

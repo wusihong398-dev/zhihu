@@ -1719,7 +1719,8 @@
 
   function articleActionButtons(item) {
     const publishing = Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
-    const publish = item.status !== "published" ? `<button class="button button-primary article-publish" type="button" ${publishing ? "disabled" : ""}>发布</button>` : "";
+    const emptyContent = !Number(item.content_length || 0);
+    const publish = item.status !== "published" ? `<button class="button button-primary article-publish" type="button" ${(publishing || emptyContent) ? "disabled" : ""} title="${emptyContent ? "正文为空，请重新生成或编辑补充正文" : "发布文章"}">发布</button>` : "";
     const view = item.status === "published" && item.published_url ? `<a class="button button-ghost article-view" href="${escapeHtml(item.published_url)}" target="_blank" rel="noopener noreferrer">查看</a>` : "";
     return `${publish}${view}<button class="button button-ghost article-edit" type="button">编辑</button><button class="button button-ghost danger-text article-delete" type="button">删除</button>`;
   }
@@ -1733,7 +1734,9 @@
     $("#article-mark-ready").disabled = state.selectedArticles.size === 0;
     $("#article-bulk-delete").disabled = state.selectedArticles.size === 0;
     const selectedItems = (state.articles.items || []).filter((item) => state.selectedArticles.has(item.id));
-    $("#article-bulk-publish").disabled = !selectedItems.length || selectedItems.some((item) => item.status === "published") || Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
+    const containsEmptyContent = selectedItems.some((item) => !Number(item.content_length || 0));
+    $("#article-bulk-publish").disabled = !selectedItems.length || containsEmptyContent || selectedItems.some((item) => item.status === "published") || Boolean(state.publishJob && activeArticleJobStatuses.has(state.publishJob.status));
+    $("#article-bulk-publish").title = containsEmptyContent ? "所选文章中有正文为空的生成失败记录，请重新生成或编辑后再发布" : "";
   }
 
   function renderArticles() {
@@ -1859,6 +1862,10 @@
   async function publishArticle(event) {
     const articleId = event.currentTarget.closest(".article-row").dataset.articleId;
     const article = state.articles.items.find((item) => item.id === articleId);
+    if (article && !Number(article.content_length || 0)) {
+      toast("这篇文章正文为空，生成失败记录不能直接发布；请重新生成或点击编辑补充正文", "error");
+      return;
+    }
     if (!article || !window.confirm(`确定使用“${article.account_name}”发布文章“${article.title}”吗？`)) return;
     await startPublishJob([article.id]);
   }

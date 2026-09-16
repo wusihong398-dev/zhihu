@@ -155,6 +155,26 @@ def test_local_publisher_device_claim_and_success_result(monkeypatch) -> None:
                 f"/api/accounts/{account_id}/auto-answer/summary"
             ).json()["remaining_today"] == 4
 
+            empty_article = client.post(
+                f"/api/accounts/{account_id}/articles",
+                json={
+                    "title": "生成失败：空正文不能发布",
+                    "content": "",
+                    "status": "failed",
+                },
+            ).json()
+            rejected_empty_article = client.post(
+                "/api/article-jobs/publish",
+                json={"article_ids": [empty_article["id"]]},
+            )
+            assert rejected_empty_article.status_code == 400
+            assert "正文为空" in rejected_empty_article.json()["detail"]
+            assert "不能直接发布" in rejected_empty_article.json()["detail"]
+            listed_empty_article = client.get(
+                f"/api/accounts/{account_id}/articles/{empty_article['id']}"
+            ).json()
+            assert "重新生成或点击编辑" in listed_empty_article["error_message"]
+
             article = client.post(
                 f"/api/accounts/{account_id}/articles",
                 json={

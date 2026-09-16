@@ -21,7 +21,7 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.19.1";
+    const string AppVersion = "0.19.2";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
@@ -327,6 +327,8 @@ internal sealed class MainForm : Form
     async Task<string> PublishArticleAsync(PublishTask task)
     {
         if (string.IsNullOrWhiteSpace(task.article_title)) throw new Exception("文章任务缺少标题");
+        if (string.IsNullOrWhiteSpace(task.content))
+            throw new Exception("文章正文为空：这是生成失败记录，不能直接发布；请重新生成或编辑补充正文");
         var nav = WaitNavigationAsync();
         browser.CoreWebView2.Navigate(task.target_url ?? "https://zhuanlan.zhihu.com/write");
         await nav; await Task.Delay(2200);
