@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -21,7 +23,8 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.19.4";
+    const string AppVersion = "0.19.5";
+    const int ArticleImageMaxDimension = 1024;
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
@@ -593,8 +596,9 @@ internal sealed class MainForm : Form
                 var bytes = await http.GetByteArrayAsync(task.image_url);
                 using var stream = new MemoryStream(bytes);
                 using var source = System.Drawing.Image.FromStream(stream);
-                using var bitmap = new Bitmap(source);
+                using var bitmap = PrepareArticleImage(source);
                 Clipboard.SetImage(bitmap);
+                var existingImages = await ScriptIntAsync("document.querySelector('[data-totod-article-editor=\"true\"]')?.querySelectorAll('img').length || 0");
                 await ScriptStringAsync("""
                 (() => {
                   const visible = e => {
@@ -618,10 +622,33 @@ internal sealed class MainForm : Form
                   return 'ready';
                 })()
                 """);
-                browser.Focus(); SendKeys.SendWait("^v"); await Task.Delay(5000);
-                AddLog("本地图片已粘贴到文章正文");
+                browser.Focus(); SendKeys.SendWait("^v");
+                var imageState = "waiting";
+                var imageInserted = false;
+                for (var i = 0; i < 20; i++) {
+                    await Task.Delay(500);
+                    imageState = await ScriptStringAsync("""
+                    (() => {
+                      const editor = document.querySelector('[data-totod-article-editor="true"]');
+                      const count = editor?.querySelectorAll('img').length || 0;
+                      const pageText = document.body?.innerText || '';
+                      if (pageText.includes('素材文件过大') || pageText.includes('文件过大')) return 'too-large';
+                      if (count > IMAGE_COUNT_TOKEN) return 'inserted:' + count;
+                      return 'waiting';
+                    })()
+                    """.Replace("IMAGE_COUNT_TOKEN", existingImages.ToString()));
+                    if (imageState == "too-large") break;
+                    if (imageState.StartsWith("inserted")) imageInserted = true;
+                    if (imageInserted && i >= 9) break;
+                }
+                if (imageInserted && imageState != "too-large")
+                    AddLog($"本地图片已压缩为 {bitmap.Width}×{bitmap.Height} 并插入文章正文");
+                else if (imageState == "too-large")
+                    AddLog("知乎仍提示图片素材过大，已跳过图片并继续发布正文");
+                else
+                    AddLog("未确认图片插入成功，已跳过图片并继续发布正文");
             } catch (Exception ex) {
-                throw new Exception("文章图片插入失败：" + ex.Message, ex);
+                AddLog("文章图片处理失败，已跳过图片并继续发布正文：" + ex.Message);
             }
         }
 
@@ -705,6 +732,29 @@ internal sealed class MainForm : Form
         } finally {
             browser.CoreWebView2.WebResourceResponseReceived -= CaptureArticlePublishResponse;
         }
+    }
+
+    static Bitmap PrepareArticleImage(System.Drawing.Image source)
+    {
+        var scale = Math.Min(1d, (double)ArticleImageMaxDimension / Math.Max(source.Width, source.Height));
+        var width = Math.Max(1, (int)Math.Round(source.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(source.Height * scale));
+        var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.White);
+        graphics.CompositingMode = CompositingMode.SourceCopy;
+        graphics.CompositingQuality = CompositingQuality.HighQuality;
+        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        graphics.SmoothingMode = SmoothingMode.HighQuality;
+        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        graphics.DrawImage(source, new Rectangle(0, 0, width, height));
+        return bitmap;
+    }
+
+    async Task<int> ScriptIntAsync(string script)
+    {
+        var raw = await browser.CoreWebView2.ExecuteScriptAsync(script);
+        return int.TryParse(raw, out var value) ? value : 0;
     }
 
     void StopListening(string message) { poll.Stop(); pendingLoginAccount = ""; stop.Enabled = false; status.Text = message; AddLog(message); }
