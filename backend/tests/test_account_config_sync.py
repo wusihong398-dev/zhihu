@@ -25,6 +25,13 @@ def test_account_can_copy_reusable_configuration_without_duplicates() -> None:
                     "password": "test-password-123",
                 },
             ).json()
+            target_user = client.post(
+                "/api/users",
+                json={
+                    "username": f"account_sync_target_{suffix}",
+                    "password": "test-password-456",
+                },
+            ).json()
             app.dependency_overrides.pop(require_admin, None)
             current["user"] = SimpleNamespace(
                 id=uuid.UUID(user["id"]), role=UserRole.user
@@ -114,20 +121,31 @@ def test_account_can_copy_reusable_configuration_without_duplicates() -> None:
             assert len(client.get(f"/api/accounts/{target_id}/keyword-folders").json()) == 1
             assert len(client.get(f"/api/schedules?account_id={target_id}").json()) == 1
 
-            current["user"] = ADMIN
-            admin_target = client.post(
-                "/api/accounts",
-                json={
-                    "display_name": f"管理员同步目标-{suffix}",
-                    "sync_config_from_account_id": source_id,
-                },
+            current["user"] = SimpleNamespace(
+                id=uuid.UUID(target_user["id"]), role=UserRole.user
             )
-            assert admin_target.status_code == 201
-            assert admin_target.json()["owner_user_id"] is None
-            assert admin_target.json()["daily_article_limit"] == 7
+            cross_owner_target = client.post(
+                "/api/accounts",
+                json={"display_name": f"跨用户同步目标-{suffix}"},
+            )
+            assert cross_owner_target.status_code == 201
+
+            current["user"] = ADMIN
+            admin_synced = client.patch(
+                f"/api/accounts/{cross_owner_target.json()['id']}",
+                json={"sync_config_from_account_id": source_id},
+            )
+            assert admin_synced.status_code == 200
+            assert admin_synced.json()["owner_user_id"] == target_user["id"]
+            assert admin_synced.json()["daily_article_limit"] == 7
             assert client.get(
-                f"/api/accounts/{admin_target.json()['id']}/products"
+                f"/api/accounts/{cross_owner_target.json()['id']}/products"
             ).json()["total"] == 1
+            assert len(
+                client.get(
+                    f"/api/schedules?account_id={cross_owner_target.json()['id']}"
+                ).json()
+            ) == 1
     finally:
         app.dependency_overrides.pop(require_active_user, None)
         app.dependency_overrides.pop(require_admin, None)
