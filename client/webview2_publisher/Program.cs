@@ -21,14 +21,15 @@ internal record Result(bool success, string? published_url = null, string? error
 
 internal sealed class MainForm : Form
 {
-    const string AppVersion = "0.19.2";
+    const string AppVersion = "0.19.4";
     readonly string appDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TOTODWebView2Publisher");
     HttpClient http = new() { Timeout = TimeSpan.FromSeconds(40) };
     readonly TextBox server = new() { Text = "https://totod.cn", Width = 230 };
     readonly TextBox token = new() { PasswordChar = '●', Width = 320 };
     readonly ComboBox accounts = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 350 };
     readonly Button connect = new() { Text = "保存并连接" };
-    readonly Button login = new() { Text = "登录并自动监听", AutoSize = true };
+    readonly Button refresh = new() { Text = "刷新账号", AutoSize = true };
+    readonly Button login = new() { Text = "登录/加入自动监听", AutoSize = true };
     readonly Button stop = new() { Text = "停止监听", Enabled = false, AutoSize = true };
     readonly Label status = new() { AutoSize = true, ForeColor = Color.SeaGreen, Text = "请先连接服务器" };
     readonly TextBox log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 125 };
@@ -36,8 +37,9 @@ internal sealed class MainForm : Form
     WebView2 browser = new() { Dock = DockStyle.Fill };
     readonly System.Windows.Forms.Timer poll = new() { Interval = 1800 };
     List<Account> accountItems = [];
-    string activeAccount = "";
+    readonly HashSet<string> monitoredAccounts = new(StringComparer.OrdinalIgnoreCase);
     string browserAccount = "";
+    string pendingLoginAccount = "";
     bool busy;
 
     public MainForm()
@@ -48,10 +50,14 @@ internal sealed class MainForm : Form
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 94, Padding = new Padding(8), AutoSize = false };
         top.Controls.AddRange([new Label { Text = "服务器", AutoSize = true, Margin = new Padding(3, 8, 3, 3) }, server,
             new Label { Text = "设备密钥", AutoSize = true, Margin = new Padding(12, 8, 3, 3) }, token, connect,
-            new Label { Text = "知乎账号", AutoSize = true, Margin = new Padding(3, 13, 3, 3) }, accounts, login, stop, status]);
+            new Label { Text = "知乎账号", AutoSize = true, Margin = new Padding(3, 13, 3, 3) }, accounts, refresh, login, stop, status]);
         browserHost.Controls.Add(browser);
         Controls.Add(browserHost); Controls.Add(log); Controls.Add(top);
         connect.Click += async (_, _) => await ConnectAsync();
+        refresh.Click += async (_, _) => {
+            try { await RefreshAccountsAsync(); }
+            catch (Exception ex) { Fail("刷新账号失败：" + ex.Message); }
+        };
         login.Click += async (_, _) => await LoginAsync();
         stop.Click += (_, _) => StopListening("已停止监听");
         poll.Tick += async (_, _) => await PollAsync();
@@ -66,8 +72,21 @@ internal sealed class MainForm : Form
             var configPath = File.Exists(newConfig) ? newConfig : oldConfig;
             var cfg = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(configPath))!;
             server.Text = cfg.GetValueOrDefault("server", server.Text); token.Text = cfg.GetValueOrDefault("token", "");
+            foreach (var accountId in cfg.GetValueOrDefault("monitored_accounts", "")
+                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                monitoredAccounts.Add(accountId);
             if (token.Text.Length > 0) Shown += async (_, _) => await ConnectAsync();
         } catch { }
+    }
+
+    void SaveConfig()
+    {
+        Directory.CreateDirectory(appDir);
+        File.WriteAllText(Path.Combine(appDir, "config.json"), JsonSerializer.Serialize(new {
+            server = server.Text.Trim(),
+            token = token.Text.Trim(),
+            monitored_accounts = string.Join(',', monitoredAccounts.OrderBy(value => value))
+        }));
     }
 
     void ConfigureRequest()
@@ -83,12 +102,50 @@ internal sealed class MainForm : Form
     {
         try {
             ConfigureRequest();
-            Directory.CreateDirectory(appDir);
-            File.WriteAllText(Path.Combine(appDir, "config.json"), JsonSerializer.Serialize(new { server = server.Text.Trim(), token = token.Text.Trim() }));
-            accountItems = await http.GetFromJsonAsync<List<Account>>("local-publisher/client/accounts") ?? [];
-            accounts.DataSource = accountItems; accounts.DisplayMember = nameof(Account.display_name);
-            status.Text = $"已连接，共 {accountItems.Count} 个账号"; AddLog(status.Text);
+            SaveConfig();
+            await RefreshAccountsAsync();
+            await ValidateStoredAccountsAsync();
+            if (monitoredAccounts.Count > 0) {
+                poll.Start(); stop.Enabled = true;
+                status.Text = $"运行中：自动监听 {monitoredAccounts.Count} 个已登录账号";
+                AddLog(status.Text);
+            } else {
+                status.Text = $"已连接，共 {accountItems.Count} 个账号；请选择账号登录并加入监听";
+                AddLog(status.Text);
+            }
         } catch (Exception ex) { Fail("连接失败：" + ex.Message); }
+    }
+
+    async Task RefreshAccountsAsync()
+    {
+        var selectedId = Selected()?.id ?? browserAccount;
+        accountItems = await http.GetFromJsonAsync<List<Account>>("local-publisher/client/accounts") ?? [];
+        var validIds = accountItems.Select(item => item.id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var account in accountItems.Where(item => item.answer_publish_mode == "local")) {
+            if (Directory.Exists(Path.Combine(appDir, "profiles", account.id)))
+                monitoredAccounts.Add(account.id);
+        }
+        monitoredAccounts.RemoveWhere(id => !validIds.Contains(id));
+        accounts.DataSource = null;
+        accounts.DataSource = accountItems;
+        accounts.DisplayMember = nameof(Account.display_name);
+        var selected = accountItems.FindIndex(item => item.id == selectedId);
+        if (selected >= 0) accounts.SelectedIndex = selected;
+        SaveConfig();
+        AddLog($"账号列表已刷新，共 {accountItems.Count} 个账号；自动监听 {monitoredAccounts.Count} 个");
+    }
+
+    async Task ValidateStoredAccountsAsync()
+    {
+        var expired = new List<string>();
+        foreach (var accountId in monitoredAccounts.ToArray()) {
+            await EnsureBrowserAccountAsync(accountId);
+            if (!await LoggedInAsync()) expired.Add(accountId);
+        }
+        foreach (var accountId in expired) monitoredAccounts.Remove(accountId);
+        SaveConfig();
+        if (expired.Count > 0)
+            AddLog($"已忽略 {expired.Count} 个未登录或登录失效的账号，请选择对应账号重新登录");
     }
 
     Account? Selected() => accounts.SelectedItem as Account;
@@ -99,26 +156,34 @@ internal sealed class MainForm : Form
         if (account is null) { MessageBox.Show("请先选择知乎账号"); return; }
         if (account.answer_publish_mode != "local") { MessageBox.Show("该账号尚未设置为 Windows 本地发布"); return; }
         try {
-            poll.Stop(); activeAccount = account.id;
-            if (browser.CoreWebView2 is not null && browserAccount != account.id) {
-                browserHost.Controls.Remove(browser);
-                browser.Dispose();
-                browser = new WebView2 { Dock = DockStyle.Fill };
-                browserHost.Controls.Add(browser);
-            }
-            if (browser.CoreWebView2 is null) {
-                var profile = Path.Combine(appDir, "profiles", account.id);
-                Directory.CreateDirectory(profile);
-                var env = await CoreWebView2Environment.CreateAsync(null, profile);
-                await browser.EnsureCoreWebView2Async(env);
-            }
-            browserAccount = account.id;
-            browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            poll.Stop(); pendingLoginAccount = account.id;
+            await EnsureBrowserAccountAsync(account.id);
             browser.CoreWebView2.Navigate("https://www.zhihu.com/");
-            status.Text = "请在内嵌 Edge 中登录知乎；检测到登录后自动监听";
+            status.Text = $"请登录 {account.display_name}；成功后会加入多账号自动监听";
             AddLog($"已打开账号：{account.display_name}");
-            poll.Start(); stop.Enabled = true; login.Enabled = false;
+            poll.Start(); stop.Enabled = true;
         } catch (Exception ex) { Fail("内嵌 Edge 启动失败：" + ex.Message); }
+    }
+
+    async Task EnsureBrowserAccountAsync(string accountId)
+    {
+        if (browser.CoreWebView2 is not null && browserAccount == accountId) {
+            return;
+        }
+        if (browser.CoreWebView2 is not null) {
+            browserHost.Controls.Remove(browser);
+            browser.Dispose();
+            browser = new WebView2 { Dock = DockStyle.Fill };
+            browserHost.Controls.Add(browser);
+        }
+        var profile = Path.Combine(appDir, "profiles", accountId);
+        Directory.CreateDirectory(profile);
+        var env = await CoreWebView2Environment.CreateAsync(null, profile);
+        await browser.EnsureCoreWebView2Async(env);
+        browserAccount = accountId;
+        browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        var selected = accountItems.FindIndex(item => item.id == accountId);
+        if (selected >= 0) accounts.SelectedIndex = selected;
     }
 
     async Task<bool> LoggedInAsync()
@@ -130,20 +195,45 @@ internal sealed class MainForm : Form
 
     async Task PollAsync()
     {
-        if (busy || string.IsNullOrEmpty(activeAccount) || browser.CoreWebView2 is null) return;
+        if (busy) return;
         busy = true;
         try {
-            if (!await LoggedInAsync()) { status.Text = "等待知乎登录…"; return; }
-            status.Text = "运行中：正在等待发布任务";
-            var task = await http.PostAsync($"local-publisher/client/tasks/claim?account_id={Uri.EscapeDataString(activeAccount)}&task_types=answer%2Carticle", null);
-            task.EnsureSuccessStatusCode();
-            var item = await task.Content.ReadFromJsonAsync<PublishTask>();
+            if (!string.IsNullOrEmpty(pendingLoginAccount)) {
+                if (browser.CoreWebView2 is null || browserAccount != pendingLoginAccount || !await LoggedInAsync()) {
+                    status.Text = "等待当前知乎账号登录…";
+                    return;
+                }
+                monitoredAccounts.Add(pendingLoginAccount);
+                var name = accountItems.FirstOrDefault(item => item.id == pendingLoginAccount)?.display_name ?? pendingLoginAccount;
+                pendingLoginAccount = "";
+                SaveConfig();
+                AddLog($"账号 {name} 已登录并加入自动监听");
+            }
+            if (monitoredAccounts.Count == 0) {
+                status.Text = "请先选择知乎账号并登录，登录后才能领取发布任务";
+                return;
+            }
+            status.Text = $"运行中：正在轮询 {monitoredAccounts.Count} 个已登录账号";
+            PublishTask? item = null;
+            foreach (var accountId in monitoredAccounts.ToArray()) {
+                if (!accountItems.Any(account => account.id == accountId && account.answer_publish_mode == "local")) continue;
+                var task = await http.PostAsync($"local-publisher/client/tasks/claim?account_id={Uri.EscapeDataString(accountId)}&task_types=answer%2Carticle", null);
+                task.EnsureSuccessStatusCode();
+                item = await task.Content.ReadFromJsonAsync<PublishTask>();
+                if (item is not null) break;
+            }
             if (item is null) return;
             var itemTitle = item.task_type == "article" ? item.article_title : item.question_title;
             AddLog($"领取{(item.task_type == "article" ? "文章" : "回答")}任务：{itemTitle}");
             status.Text = "正在发布：" + itemTitle;
             Result result;
             try {
+                await EnsureBrowserAccountAsync(item.account_id);
+                if (!await LoggedInAsync()) {
+                    monitoredAccounts.Remove(item.account_id);
+                    SaveConfig();
+                    throw new Exception($"账号 {item.account_id} 登录已失效；请重新登录后重试此内容");
+                }
                 var publishedUrl = item.task_type == "article"
                     ? await PublishArticleAsync(item)
                     : await PublishAnswerAsync(item);
@@ -156,6 +246,8 @@ internal sealed class MainForm : Form
                 StopListening("已停止：知乎拒绝当前 WebView2 会话");
             else if (!result.success && result.error_message?.Contains("文章创作页结构未识别") == true)
                 StopListening("已停止：知乎文章编辑器结构未识别，已保留其余待发布任务");
+            else if (!result.success && result.error_message?.Contains("登录已失效") == true)
+                status.Text = "当前账号登录已失效，请重新登录；其他已登录账号继续监听";
         } catch (Exception ex) { Fail("任务请求失败：" + ex.Message); }
         finally { busy = false; }
     }
@@ -615,7 +707,7 @@ internal sealed class MainForm : Form
         }
     }
 
-    void StopListening(string message) { poll.Stop(); activeAccount = ""; stop.Enabled = false; login.Enabled = true; status.Text = message; AddLog(message); }
+    void StopListening(string message) { poll.Stop(); pendingLoginAccount = ""; stop.Enabled = false; status.Text = message; AddLog(message); }
     void Fail(string message) { status.Text = message; AddLog(message); }
     void AddLog(string message) => log.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
 }
