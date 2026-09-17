@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.19.3"
+        assert version.json()["version"] == "0.19.4"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -33,14 +33,14 @@ def test_webview2_article_editor_supports_new_zhihu_structure() -> None:
     project = (
         PROJECT_ROOT / "client/webview2_publisher/TOTOD.WebView2Publisher.csproj"
     ).read_text(encoding="utf-8")
-    assert 'const string AppVersion = "0.19.2"' in publisher
+    assert 'const string AppVersion = "0.19.4"' in publisher
     assert "[data-placeholder*=\"正文\"][contenteditable=\"true\"]" in publisher
     assert "请输入正文" in publisher
     assert 'SendKeys.SendWait("^v")' in publisher
     assert "文章创作页结构未识别" in publisher
     assert "已保留其余待发布任务" in publisher
     assert "文章正文为空：这是生成失败记录" in publisher
-    assert "<Version>0.19.2</Version>" in project
+    assert "<Version>0.19.4</Version>" in project
 
 
 def test_article_list_requires_one_account_at_a_time() -> None:
@@ -76,7 +76,7 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert "sync_config_from_account_id" in script
     assert 'id="account-sync-help"' in index
     assert "isAdmin || item.owner_user_id === targetOwnerId" in script
-    assert "app.js?v=0.19.3" in index
+    assert "app.js?v=0.19.4" in index
     assert "登录状态与内容记录保持独立" in index
     assert "/website-session" in script
     assert "/browser-action" in script
