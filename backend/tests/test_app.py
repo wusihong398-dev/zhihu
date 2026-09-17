@@ -41,6 +41,7 @@ def test_webview2_article_editor_supports_new_zhihu_structure() -> None:
     assert "已保留其余待发布任务" in publisher
     assert "文章正文为空：这是生成失败记录" in publisher
     assert "<Version>0.19.4</Version>" in project
+    assert "<AssemblyName>TOTOD-Edge-Publisher-v0.19.4</AssemblyName>" in project
 
 
 def test_article_list_requires_one_account_at_a_time() -> None:

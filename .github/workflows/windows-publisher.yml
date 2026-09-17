@@ -28,15 +28,10 @@ jobs:
       - name: Test publisher listener
         working-directory: client/windows_publisher
         run: python -m unittest -v test_totod_publisher.py
-      - name: Build executable
-        working-directory: client/windows_publisher
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name TOTOD-Windows-Publisher --collect-all playwright totod_publisher.py
-      - name: Build WebView2 test client
+      - name: Build Edge publisher client
         run: dotnet publish client/webview2_publisher/TOTOD.WebView2Publisher.csproj -c Release -r win-x64 --self-contained true -o client/webview2_publisher/dist
       - uses: actions/upload-artifact@v4
         with:
-          name: TOTOD-Windows-Publisher
-          path: |
-            client/windows_publisher/dist/TOTOD-Windows-Publisher.exe
-            client/webview2_publisher/dist/TOTOD-WebView2-Publisher.exe
+          name: TOTOD-Edge-Publisher-v0.19.4
+          path: client/webview2_publisher/dist/TOTOD-Edge-Publisher-v0.19.4.exe
           if-no-files-found: error
