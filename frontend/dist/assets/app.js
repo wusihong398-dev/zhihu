@@ -366,12 +366,21 @@
     $("#answer-limit").value = editing?.daily_answer_limit ?? 5;
     $("#account-timezone").value = editing?.timezone || "Asia/Shanghai";
     $("#answer-publish-mode").value = editing?.answer_publish_mode || "local";
-    const targetOwnerId = editing?.owner_user_id ?? (state.user?.role === "admin" ? null : state.user?.id);
-    const syncCandidates = state.accounts.filter((item) => item.id !== editing?.id && item.owner_user_id === targetOwnerId);
-    $("#account-sync-source").innerHTML = `<option value="">请选择来源账号</option>${syncCandidates.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}</option>`).join("")}`;
+    const isAdmin = state.user?.role === "admin";
+    const targetOwnerId = editing ? editing.owner_user_id : (isAdmin ? null : state.user?.id);
+    const syncCandidates = state.accounts.filter((item) => item.id !== editing?.id && (isAdmin || item.owner_user_id === targetOwnerId));
+    const source = $("#account-sync-source");
+    source.innerHTML = syncCandidates.length
+      ? `<option value="">请选择来源账号</option>${syncCandidates.map((item) => `<option value="${item.id}">${escapeHtml(item.display_name)}${isAdmin && item.owner_user_id !== targetOwnerId ? "（其他用户）" : ""}</option>`).join("")}`
+      : `<option value="">当前没有其他可同步账号</option>`;
     $("#account-sync-config").checked = false;
     $("#account-sync-config").disabled = syncCandidates.length === 0;
-    $("#account-sync-options").hidden = true;
+    source.disabled = true;
+    source.required = false;
+    $("#account-sync-options").hidden = false;
+    $("#account-sync-help").textContent = syncCandidates.length
+      ? "勾选上方同步功能后，在这里选择来源账号。同名配置会更新，目标账号其他配置会保留。"
+      : "当前没有其他可同步账号；请先添加另一个知乎账号。";
     $("#account-error").textContent = "";
     $("#account-dialog").hidden = false;
     window.setTimeout(() => $("#display-name").focus(), 0);
@@ -381,8 +390,10 @@
 
   function toggleAccountConfigSync() {
     const enabled = $("#account-sync-config").checked;
-    $("#account-sync-options").hidden = !enabled;
-    $("#account-sync-source").required = enabled;
+    const source = $("#account-sync-source");
+    source.disabled = !enabled;
+    source.required = enabled;
+    if (enabled) source.focus();
   }
 
   function editAccount(event) {

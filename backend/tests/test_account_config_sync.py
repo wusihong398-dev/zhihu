@@ -113,6 +113,21 @@ def test_account_can_copy_reusable_configuration_without_duplicates() -> None:
             assert client.get(f"/api/accounts/{target_id}/products").json()["total"] == 1
             assert len(client.get(f"/api/accounts/{target_id}/keyword-folders").json()) == 1
             assert len(client.get(f"/api/schedules?account_id={target_id}").json()) == 1
+
+            current["user"] = ADMIN
+            admin_target = client.post(
+                "/api/accounts",
+                json={
+                    "display_name": f"管理员同步目标-{suffix}",
+                    "sync_config_from_account_id": source_id,
+                },
+            )
+            assert admin_target.status_code == 201
+            assert admin_target.json()["owner_user_id"] is None
+            assert admin_target.json()["daily_article_limit"] == 7
+            assert client.get(
+                f"/api/accounts/{admin_target.json()['id']}/products"
+            ).json()["total"] == 1
     finally:
         app.dependency_overrides.pop(require_active_user, None)
         app.dependency_overrides.pop(require_admin, None)

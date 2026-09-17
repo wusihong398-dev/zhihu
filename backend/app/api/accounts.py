@@ -67,7 +67,7 @@ async def _sync_requested_configuration(
     if source_account_id == account.id:
         raise HTTPException(status_code=400, detail="不能从当前账号同步配置")
     source = await get_account_for_user(source_account_id, user, db)
-    if source.owner_user_id != account.owner_user_id:
+    if user.role != UserRole.admin and source.owner_user_id != account.owner_user_id:
         raise HTTPException(status_code=403, detail="只能同步同一系统用户下的知乎账号配置")
     await sync_account_configuration(
         source,

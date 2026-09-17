@@ -20,7 +20,7 @@ def test_health_version_and_auth_boundary() -> None:
 
         version = client.get("/api/version")
         assert version.status_code == 200
-        assert version.json()["version"] == "0.19.2"
+        assert version.json()["version"] == "0.19.3"
 
         accounts = client.get("/api/accounts")
         assert accounts.status_code == 401
@@ -74,6 +74,9 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert "openZhihuWebsite" in script
     assert 'id="account-sync-config"' in index
     assert "sync_config_from_account_id" in script
+    assert 'id="account-sync-help"' in index
+    assert "isAdmin || item.owner_user_id === targetOwnerId" in script
+    assert "app.js?v=0.19.3" in index
     assert "登录状态与内容记录保持独立" in index
     assert "/website-session" in script
     assert "/browser-action" in script
@@ -95,7 +98,6 @@ def test_article_list_requires_one_account_at_a_time() -> None:
     assert 'id="article-generation-view-failures"' in index
     assert 'articleStatus: "failed"' in script
     assert "生成失败记录不能直接发布" in script
-    assert "app.js?v=0.19.2" in index
 
 
 def test_qa_pages_are_functional_modules() -> None:
